@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	uv "github.com/charmbracelet/ultraviolet"
 
 	"github.com/vitruves/ghostty-config/internal/pix"
 )
@@ -284,5 +285,28 @@ func TestUpdateDialog(t *testing.T) {
 	w.key("enter")
 	if w.m.overlay != overlayUpdate {
 		t.Fatal("closing the welcome did not show the update")
+	}
+}
+
+// The cell size comes from the terminal, never from the window's pixel size:
+// a resize asks for it, and only a new answer changes it.
+func TestCellSizeComesFromTheTerminal(t *testing.T) {
+	var out bytes.Buffer
+	h := newHarnessWith(t, pixConfig, Options{NoReload: true, Images: true, ImgOut: &out, Pixel: true, PixCell: [2]int{17, 38}})
+	_, cmd := h.m.Update(tea.WindowSizeMsg{Width: 118, Height: 30})
+	if cmd == nil {
+		t.Fatal("a resize asked nothing of the terminal")
+	}
+	if h.m.px.cw != 17 || h.m.px.ch != 38 {
+		t.Fatalf("a resize changed the cell to %dx%d", h.m.px.cw, h.m.px.ch)
+	}
+	h.send(uv.CellSizeEvent{Width: 19, Height: 42})
+	if h.m.px.cw != 19 || h.m.px.ch != 42 {
+		t.Fatalf("the reported cell was not taken: %dx%d", h.m.px.cw, h.m.px.ch)
+	}
+	out.Reset()
+	h.m.View()
+	if !strings.Contains(out.String(), "s="+itoa(118*19)+",v=42") {
+		t.Fatal("the rows were not drawn again at the new cell size")
 	}
 }

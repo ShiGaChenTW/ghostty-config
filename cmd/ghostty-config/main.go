@@ -16,7 +16,7 @@ import (
 )
 
 // version is overridden at build time with -ldflags "-X main.version=...".
-var version = "1.1.1"
+var version = "1.1.2"
 
 func main() {
 	configPath := flag.String("config", "", "Ghostty config file to edit instead of the default ones")
@@ -129,10 +129,9 @@ Keys:
 	// The picture interface needs the exact size of a cell, which only the
 	// terminal can tell, so it is asked before anything reads the keyboard.
 	if images && !*cellsOnly {
-		if cw, ch, padX, padY, ok := tui.ProbeCell(); ok {
+		if cw, ch, ok := tui.ProbeCell(); ok {
 			opts.Pixel = true
 			opts.PixCell = [2]int{cw, ch}
-			opts.PixPad = [2]int{padX, padY}
 		}
 	}
 	model := tui.New(paths, tree, lib, state, opts)

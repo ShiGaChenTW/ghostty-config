@@ -27,11 +27,10 @@ import (
 const pixUnit = 22
 
 type pixEngine struct {
-	cw, ch     int // a cell in device pixels, exactly
-	padX, padY int // what the window size reports beyond the grid
-	viaFile    bool
-	seq        int
-	seed       maphash.Seed
+	cw, ch  int // a cell in device pixels, exactly
+	viaFile bool
+	seq     int
+	seed    maphash.Seed
 
 	// What the last frame laid out, for the keys that page and move.
 	cols     int // cards per row on the wall
@@ -46,7 +45,7 @@ type pixEngine struct {
 }
 
 func newPixEngine(o Options) *pixEngine {
-	e := &pixEngine{cw: o.PixCell[0], ch: o.PixCell[1], padX: o.PixPad[0], padY: o.PixPad[1], seed: maphash.MakeSeed(), pics: map[string]*image.RGBA{}}
+	e := &pixEngine{cw: o.PixCell[0], ch: o.PixCell[1], seed: maphash.MakeSeed(), pics: map[string]*image.RGBA{}}
 	// A temporary file costs nothing on the pty, but only a terminal on this
 	// machine can read it.
 	e.viaFile = os.Getenv("SSH_CONNECTION") == "" && os.Getenv("SSH_TTY") == ""
@@ -58,23 +57,23 @@ func (m *Model) pixelOn() bool {
 	return m.px != nil && m.imgs != nil && m.px.cw > 0 && m.px.ch > 0 && m.width > 0 && m.height > 0
 }
 
-// refreshPixCell works the cell size out again after a resize: the padding
-// stays what it was, so a change of font size shows as a change of cell.
-func (m *Model) refreshPixCell() {
+// askCellSize is sent after every resize. The cell only changes with the
+// font size, and only the terminal knows it exactly: the window's pixel size
+// includes whatever part of a cell is left over at the edges, which changes
+// with the window, so a size worked out from it is often a pixel off, and
+// rows drawn a pixel off are stretched by the terminal into a smear.
+const askCellSize = "\x1b[16t"
+
+// setPixCell takes the cell size the terminal reported. A new size throws
+// the pictures away; they are drawn and sent again for it.
+func (m *Model) setPixCell(cw, ch int) bool {
 	e := m.px
-	cols, rows, xpix, ypix := termPixels()
-	if cols <= 0 || rows <= 0 || xpix <= 0 || ypix <= 0 {
-		return
+	if cw <= 0 || ch <= 0 || (cw == e.cw && ch == e.ch) {
+		return false
 	}
-	cw, ch := (xpix-e.padX)/cols, (ypix-e.padY)/rows
-	if cw <= 0 || ch <= 0 {
-		return
-	}
-	if cw != e.cw || ch != e.ch {
-		e.cw, e.ch = cw, ch
-		e.pics = map[string]*image.RGBA{}
-		m.imgs.reset()
-	}
+	e.cw, e.ch = cw, ch
+	e.pics = map[string]*image.RGBA{}
+	return true
 }
 
 // tempFile writes pixels where the terminal can read them, or says it could

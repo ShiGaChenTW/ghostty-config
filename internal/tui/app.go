@@ -49,10 +49,9 @@ type Options struct {
 	CellW, CellH float64
 	ImgOut       io.Writer
 	// Pixel draws the whole interface as pictures, which needs Images and
-	// the exact size of a cell, PixCell, in pixels; PixPad is how much the
-	// window size the terminal reports exceeds the grid.
-	Pixel           bool
-	PixCell, PixPad [2]int
+	// the exact size of a cell, PixCell, in pixels.
+	Pixel   bool
+	PixCell [2]int
 	// Version is this build's version, compared with the newest release.
 	Version string
 	// NoUpdateCheck never asks GitHub for a newer release.
@@ -318,8 +317,19 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// The renderer clears the whole screen after every resize, and the
 		// terminal drops every picture with it: send them all again once it
-		// has.
+		// has, at the cell size the terminal reports now.
+		if m.px != nil {
+			// The layout changes with the size: bring the highlight and its
+			// group back into view.
+			m.centre = true
+			return m, tea.Batch(tea.Raw(askCellSize), m.armImages())
+		}
 		return m, m.armImages()
+	case uv.CellSizeEvent:
+		if m.px != nil && m.setPixCell(msg.Width, msg.Height) {
+			return m, m.armImages()
+		}
+		return m, nil
 	case imgReadyMsg:
 		if msg.seq == m.imgSeq && m.imgs != nil {
 			// Whatever was sent before went to the other screen: send it all

@@ -149,7 +149,7 @@ func (m *Model) imagesOn() bool {
 // away the pictures drawn for the old one.
 func (m *Model) refreshCell() {
 	if m.px != nil {
-		m.refreshPixCell()
+		// The picture interface asks the terminal instead: askCellSize.
 		return
 	}
 	w, h := cellPixels()
