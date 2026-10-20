@@ -71,7 +71,7 @@ Everything can also be clicked. Click a section, a family or a setting to go to 
 - **Display.** In Ghostty and Kitty, the whole interface is drawn as images through the Kitty graphics protocol. Only the rows that change are redrawn, which takes a millisecond or two. Anywhere else, and inside tmux or screen, it is drawn with plain terminal text.
 - **Your files.** Each setting is rewritten on the line where it is defined, and comments are kept. Every file is backed up to `~/.config/ghostty-config/backups/` before its first change.
 - **Reload.** On macOS the tool sends Ghostty its reload shortcut, which needs the Accessibility permission. Elsewhere, reload Ghostty yourself.
-- **Updates.** At most once a day the tool checks GitHub for a new release. When there is one, a dialog offers to install it: **Install** downloads the binary for your system, checks its checksum and replaces the current one, and **Next time** leaves things as they are. The network is used for nothing else, apart from downloads you ask for. `-no-update-check` turns the check off.
+- **Updates.** At most once an hour the tool checks GitHub for a new release, in the background. When there is one, a dialog offers to install it: **Install** downloads the binary for your system, checks its checksum and replaces the current one, and **Next time** leaves things as they are. The network is used for nothing else, apart from downloads you ask for. `-no-update-check` turns the check off.
 
 ## Options
 

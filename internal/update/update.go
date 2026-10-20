@@ -30,8 +30,10 @@ const InstallHint = "curl -fsSL " + InstallURL + " | sh"
 // captive portal costs a few seconds of a background goroutine and nothing else.
 const Timeout = 3 * time.Second
 
-// Interval is how long a check stays fresh; GitHub is asked at most this often.
-const Interval = 24 * time.Hour
+// Interval is how long a check stays fresh; GitHub is asked at most this
+// often. An hour, not a day: a check remembered all day hid every release
+// published that day.
+const Interval = time.Hour
 
 // Latest returns the tag of the newest release, without its leading "v".
 func Latest(ctx context.Context) (string, error) {
