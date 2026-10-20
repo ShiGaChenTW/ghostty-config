@@ -160,6 +160,67 @@ func TestLigatures(t *testing.T) {
 	}
 }
 
+func TestSaveKeepsEditsMadeOutsideTheTool(t *testing.T) {
+	p, dir := fixture(t, map[string]string{"xdg/config": "font-size = 10\nwindow-width = 1\n"})
+	path := filepath.Join(dir, "xdg", "config")
+	tree, _ := Load(p)
+	tree.Set("theme", "Dracula")
+	if _, err := tree.Save(); err != nil {
+		t.Fatal(err)
+	}
+	// The user edits the file in their editor while the tool runs: changes a
+	// key, adds a comment, a new key, and a key the tool is about to set.
+	external := "# tuned by hand\nfont-size = 13\nwindow-width = 1\n\ntheme = Dracula\nwindow-height = 40\ncursor-style = block\n"
+	if err := os.WriteFile(path, []byte(external), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tree.Set("window-padding-x", "8")
+	tree.Set("cursor-style", "bar")
+	if _, err := tree.Save(); err != nil {
+		t.Fatalf("save after an external edit: %v", err)
+	}
+	got, _ := os.ReadFile(path)
+	want := "# tuned by hand\nfont-size = 13\nwindow-width = 1\n\ntheme = Dracula\nwindow-height = 40\ncursor-style = bar\n\nwindow-padding-x = 8\n"
+	if string(got) != want {
+		t.Fatalf("got %q\nwant %q", got, want)
+	}
+	if v := tree.Value("font-size", ""); v != "13" {
+		t.Fatalf("the tree should now show the external edit, font-size = %q", v)
+	}
+	// The original and the externally edited version are both kept.
+	backups, _ := os.ReadDir(filepath.Join(dir, "state", "backups"))
+	if len(backups) != 2 {
+		t.Fatalf("expected two backups, got %d", len(backups))
+	}
+	found := false
+	for _, b := range backups {
+		data, _ := os.ReadFile(filepath.Join(dir, "state", "backups", b.Name()))
+		found = found || string(data) == external
+	}
+	if !found {
+		t.Fatal("the externally edited version was not backed up")
+	}
+}
+
+func TestIncludeExpandsHome(t *testing.T) {
+	p, dir := fixture(t, map[string]string{
+		"xdg/config":       "config-file = ~/colors.conf\nconfig-file = ?~/missing.conf\nconfig-file = ?\"~/quoted.conf\"\n",
+		"home/colors.conf": "background = #101010\n",
+		"home/quoted.conf": "foreground = #eeeeee\n",
+	})
+	t.Setenv("HOME", filepath.Join(dir, "home"))
+	tree, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := tree.Value("background", ""); got != "#101010" {
+		t.Fatalf("background = %q: the ~/ include was not loaded", got)
+	}
+	if got := tree.Value("foreground", ""); got != "#eeeeee" {
+		t.Fatalf("foreground = %q: the quoted optional include was not loaded", got)
+	}
+}
+
 func TestPaletteValueForms(t *testing.T) {
 	for in, want := range map[string]int{"0=#fff": 0, "0x1=#fff": 1, "0o7=#fff": 7, "0b10=#fff": 2, "255=#fff": 255} {
 		idx, _, ok := parsePaletteValue(in)

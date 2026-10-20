@@ -15,6 +15,7 @@ func (m *Model) openConfirm(text string, yes func(*Model) tea.Cmd) {
 	m.confirmNo = nil
 	m.confirmEsc = nil
 	m.overlay = overlayConfirm
+	m.confirmSeq++
 }
 
 // openMessage shows a note until a key is pressed.
@@ -31,7 +32,6 @@ func (m *Model) updateOverlay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.overlay = overlayNone
 		m.state.Welcomed = true
 		_ = m.state.Save()
-		m.showPendingUpdate()
 		return m, nil
 	case overlayUpdate:
 		switch key {

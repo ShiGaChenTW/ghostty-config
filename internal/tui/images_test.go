@@ -117,3 +117,26 @@ func TestPaletteFrames(t *testing.T) {
 	h.send(tea.WindowSizeMsg{Width: 80, Height: 24})
 	h.dump("cells-2-narrow")
 }
+
+// A picture's number is carried as a 24-bit colour: the numbering wraps
+// before it outgrows one, and passes over the numbers still held.
+func TestPictureNumbersWrapWithinTheColour(t *testing.T) {
+	s := newImageStore(nil)
+	s.next = firstID
+	held := s.ensure("held", 1, 1, func() []byte { return nil })
+	s.next = lastID - 1
+	seen := map[uint32]bool{held: true}
+	for i := 0; i < 4; i++ {
+		id := s.ensure(itoa(i), 1, 1, func() []byte { return nil })
+		if id == 0 || id > lastID {
+			t.Fatalf("picture %d got number %#x, outside the 24-bit colour", i, id)
+		}
+		if seen[id] {
+			t.Fatalf("number %#x was given twice", id)
+		}
+		seen[id] = true
+	}
+	if !seen[firstID+1] {
+		t.Fatalf("the numbering did not wrap to the start: %v", seen)
+	}
+}

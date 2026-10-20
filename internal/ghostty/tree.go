@@ -36,7 +36,18 @@ type Tree struct {
 	Docs    []*Document // load order
 	Primary *Document   // where new keys are appended
 	entries []Entry
-	mu      sync.Mutex
+	// ops are the edits made since the last save, kept so they can be
+	// replayed onto the files as they are now if someone else changed them
+	// in the meantime. Every edit is idempotent, so replaying one that
+	// already reached disk is harmless.
+	ops []func(*Tree)
+	mu  sync.Mutex
+}
+
+// record runs an edit and remembers it for a replay. The caller holds mu.
+func (t *Tree) record(op func(*Tree)) {
+	t.ops = append(t.ops, op)
+	op(t)
 }
 
 // Load reads the configuration. Missing roots are skipped; if none exists the
@@ -83,11 +94,7 @@ func Load(paths Paths) (*Tree, error) {
 			if l.Kind != LineEntry || l.Key != "config-file" || l.Value == "" {
 				continue
 			}
-			include := strings.TrimPrefix(l.Value, "?")
-			if !filepath.IsAbs(include) {
-				include = filepath.Join(filepath.Dir(path), include)
-			}
-			queue = append(queue, include)
+			queue = append(queue, includePath(l.Value, filepath.Dir(path)))
 		}
 	}
 	// The primary is the last root that exists: whatever is appended there
@@ -108,6 +115,22 @@ func Load(paths Paths) (*Tree, error) {
 	}
 	t.index()
 	return t, nil
+}
+
+// includePath resolves a `config-file` value the way Ghostty does: a leading
+// `?` only marks the file optional, `~/` is the home directory, and anything
+// else relative is taken from the directory of the file that includes it.
+func includePath(value, dir string) string {
+	include := unquote(strings.TrimPrefix(value, "?"))
+	if rest, ok := strings.CutPrefix(include, "~/"); ok {
+		if home, err := os.UserHomeDir(); err == nil {
+			return filepath.Join(home, rest)
+		}
+	}
+	if !filepath.IsAbs(include) {
+		include = filepath.Join(dir, include)
+	}
+	return include
 }
 
 func sameFile(a, b string) bool {
@@ -167,6 +190,12 @@ func (t *Tree) All(key string) []Entry {
 func (t *Tree) Set(key, value string) *Document {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	var changed *Document
+	t.record(func(t *Tree) { changed = t.set(key, value) })
+	return changed
+}
+
+func (t *Tree) set(key, value string) *Document {
 	if e, ok := t.Get(key); ok {
 		if e.Value == value {
 			return nil
@@ -186,6 +215,12 @@ func (t *Tree) Set(key, value string) *Document {
 func (t *Tree) Unset(key, reason string) []*Document {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	var changed []*Document
+	t.record(func(t *Tree) { changed = t.unset(key, reason) })
+	return changed
+}
+
+func (t *Tree) unset(key, reason string) []*Document {
 	var changed []*Document
 	for _, e := range t.All(key) {
 		e.Doc.CommentOut(e.Line, reason)
@@ -217,6 +252,12 @@ func (t *Tree) FontFamilies() []string {
 func (t *Tree) SetPrimaryFont(family string) *Document {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	var changed *Document
+	t.record(func(t *Tree) { changed = t.setPrimaryFont(family) })
+	return changed
+}
+
+func (t *Tree) setPrimaryFont(family string) *Document {
 	var first *Entry
 	for _, e := range t.All("font-family") {
 		if e.Value == "" {
@@ -283,6 +324,12 @@ func (t *Tree) DisableColourOverrides() []*Document {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	var changed []*Document
+	t.record(func(t *Tree) { changed = t.disableColourOverrides() })
+	return changed
+}
+
+func (t *Tree) disableColourOverrides() []*Document {
+	var changed []*Document
 	for _, e := range t.ColourOverrides() {
 		e.Doc.CommentOut(e.Line, "disabled by ghostty-config: it overrode the theme")
 		changed = appendDoc(changed, e.Doc)
@@ -325,6 +372,12 @@ func (t *Tree) SetLigatures(enabled bool) []*Document {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	var changed []*Document
+	t.record(func(t *Tree) { changed = t.setLigatures(enabled) })
+	return changed
+}
+
+func (t *Tree) setLigatures(enabled bool) []*Document {
+	var changed []*Document
 	if enabled {
 		for _, e := range t.All("font-feature") {
 			norm := strings.ReplaceAll(strings.ToLower(e.Value), " ", "")
@@ -355,9 +408,18 @@ func (t *Tree) Dirty() []*Document {
 // Save writes every changed file atomically, after backing up the original
 // once. A rewrite that lost entries is refused: this file belongs to the
 // user, and losing part of it is worse than failing.
+//
+// The tree is read once, but the user may edit a file in their editor while
+// the tool runs. Writing the old copy back would silently revert that, so a
+// file that changed on disk is read again, this session's edits are replayed
+// onto it, and the edited version gets a backup of its own before the write.
 func (t *Tree) Save() ([]string, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	external, err := t.refresh()
+	if err != nil {
+		return nil, err
+	}
 	var written []string
 	for _, doc := range t.Docs {
 		if !doc.Dirty {
@@ -376,19 +438,76 @@ func (t *Tree) Save() ([]string, error) {
 				if after := doc.CountEntries() + disabled; after < before {
 					return written, fmt.Errorf("refusing to write %s: the rewrite would lose %d setting(s)", doc.Path, before-after)
 				}
-				if err := backup(t.Paths.StateDir, doc.Path, original); err != nil {
+				if err := backup(t.Paths.StateDir, doc.Path, original, external[doc.Path]); err != nil {
 					return written, err
 				}
 			}
 		}
-		if err := writeFileAtomic(doc.Path, []byte(doc.Text()), 0o644); err != nil {
+		text := doc.Text()
+		if err := writeFileAtomic(doc.Path, []byte(text), 0o644); err != nil {
 			return written, err
 		}
 		doc.Dirty = false
 		doc.Exists = true
+		doc.disk = text
 		written = append(written, doc.Path)
 	}
+	t.ops = nil
 	return written, nil
+}
+
+// refresh rereads the configuration when any of its files changed on disk
+// since it was read or written, or a root that was missing has appeared,
+// and replays the pending edits onto the new copy. It returns the paths that
+// changed. Documents keep their identity where the file is still loaded.
+func (t *Tree) refresh() (map[string]bool, error) {
+	changed := make(map[string]bool)
+	for _, doc := range t.Docs {
+		if doc.changedOnDisk() {
+			changed[doc.Path] = true
+		}
+	}
+	for _, root := range t.Paths.Roots {
+		if t.doc(root) == nil {
+			if _, err := os.Stat(root); err == nil {
+				changed[root] = true
+			}
+		}
+	}
+	if len(changed) == 0 {
+		return changed, nil
+	}
+	fresh, err := Load(t.Paths)
+	if err != nil {
+		return nil, err
+	}
+	for _, op := range t.ops {
+		op(fresh)
+	}
+	for i, d := range fresh.Docs {
+		old := t.doc(d.Path)
+		if old == nil {
+			continue
+		}
+		*old = *d
+		fresh.Docs[i] = old
+		if fresh.Primary == d {
+			fresh.Primary = old
+		}
+	}
+	t.Docs, t.Primary = fresh.Docs, fresh.Primary
+	t.index()
+	return changed, nil
+}
+
+// doc finds the loaded document for a path.
+func (t *Tree) doc(path string) *Document {
+	for _, d := range t.Docs {
+		if sameFile(d.Path, path) {
+			return d
+		}
+	}
+	return nil
 }
 
 func appendDoc(docs []*Document, d *Document) []*Document {

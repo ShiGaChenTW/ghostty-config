@@ -72,10 +72,22 @@ func face(mono, bold bool, px float64) font.Face {
 	if err != nil {
 		panic("kimg: face: " + err.Error())
 	}
+	if len(faces) >= maxFaces {
+		// The window's preview sizes its text by the panel, so every width
+		// the terminal passes through while it is resized makes faces of
+		// its own; past a bound the cache starts over. What the faces
+		// handed out last are is kept one round longer, for the frame
+		// being drawn may still use them.
+		faces = map[faceKey]font.Face{}
+		lastInfo, faceInfo = faceInfo, map[font.Face]faceKey{}
+	}
 	faces[key] = f
 	faceInfo[f] = key
 	return f
 }
+
+// maxFaces bounds the faces kept: a frame draws in a dozen or so.
+const maxFaces = 64
 
 // Face is a face of the embedded fonts at a size in device pixels, for
 // drawing code outside this package.
@@ -85,11 +97,23 @@ func Face(mono, bold bool, px float64) font.Face { return face(mono, bold, px) }
 // whether it has a glyph and which face to fall back on.
 var faceInfo = map[font.Face]faceKey{}
 
+// lastInfo is faceInfo before the cache last started over.
+var lastInfo = map[font.Face]faceKey{}
+
+// infoOf is what a face handed out is, if it was handed out lately.
+func infoOf(f font.Face) (faceKey, bool) {
+	faceMu.Lock()
+	defer faceMu.Unlock()
+	if k, ok := faceInfo[f]; ok {
+		return k, true
+	}
+	k, ok := lastInfo[f]
+	return k, ok
+}
+
 // Covers reports whether a face made by Face has a glyph for r.
 func Covers(f font.Face, r rune) bool {
-	faceMu.Lock()
-	k, ok := faceInfo[f]
-	faceMu.Unlock()
+	k, ok := infoOf(f)
 	if !ok {
 		return true
 	}
@@ -108,9 +132,7 @@ func Covers(f font.Face, r rune) bool {
 // MonoOf is the monospace face of the same size and weight, which has the
 // arrows the sans faces lack.
 func MonoOf(f font.Face) font.Face {
-	faceMu.Lock()
-	k, ok := faceInfo[f]
-	faceMu.Unlock()
+	k, ok := infoOf(f)
 	if !ok {
 		return f
 	}

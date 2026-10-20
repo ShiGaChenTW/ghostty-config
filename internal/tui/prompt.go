@@ -54,6 +54,10 @@ func (m *Model) recompute() {
 	text := m.prompt.Value()
 	keep := m.selectedValue()
 	m.cmd, m.arg = m.resolve(text)
+	if m.cmd == nil || m.cmd.name != "interface" {
+		// The list of interfaces was left without Enter: what it showed goes.
+		m.endInterfacePreview()
+	}
 	if m.cmd != nil {
 		for i, g := range groups {
 			if g == m.cmd.group {
@@ -104,6 +108,16 @@ func (m *Model) recompute() {
 		m.landOnCurrentValue()
 	}
 	m.skipHeaders(1)
+}
+
+// endInterfacePreview puts back the interface that was in effect before the
+// list of them was walked, when no Enter chose one, so that a look is never
+// saved with the rest of the state.
+func (m *Model) endInterfacePreview() {
+	if m.previewingInterface {
+		m.state.Interface = m.interfaceWas
+		m.previewingInterface = false
+	}
 }
 
 // landOnCurrentValue puts the highlight on the option marked current.
@@ -345,10 +359,12 @@ func (m *Model) updatePrompt(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.sel.cursor = 0
 			m.skipHeaders(1)
 			m.galAlign = true
+			m.browsed = true
 			return m, m.afterMove()
 		case "end":
 			m.sel.cursor = len(m.results) - 1
 			m.skipHeaders(-1)
+			m.browsed = true
 			return m, m.afterMove()
 		case "shift+up":
 			return m, m.gridJumpGroup(-1)
@@ -422,12 +438,14 @@ func (m *Model) updatePrompt(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.prompt.Value() == "" || m.prompt.Position() == 0 {
 			m.sel.cursor = 0
 			m.skipHeaders(1)
+			m.browsed = true
 			return m, m.afterMove()
 		}
 	case "end":
 		if m.prompt.Value() == "" || m.prompt.Position() == len(m.prompt.Value()) {
 			m.sel.cursor = len(m.results) - 1
 			m.skipHeaders(-1)
+			m.browsed = true
 			return m, m.afterMove()
 		}
 	case "f1", "ctrl+_":

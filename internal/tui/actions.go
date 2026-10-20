@@ -46,10 +46,11 @@ func (m *Model) applyTheme(t *ghostty.Theme) bool {
 		disabled = len(m.overrides)
 		m.overrides = nil
 	}
-	value := m.setting.With(t.Name, t.IsDark())
+	value := m.setting.With(t.ConfigValue(), t.IsDark())
 	m.tree.Set("theme", value)
 	m.setting = ghostty.ParseThemeSetting(value)
 	m.applied = t.Name
+	m.appliedHere = true
 	switch {
 	case disabled > 0:
 		m.warn("Applied %s · disabled %d colour line(s) in your config that overrode it (commented out, backup kept)", t.Name, disabled)
@@ -79,6 +80,10 @@ func (m *Model) applyNow() tea.Cmd {
 	m.tintApplied()
 	if m.caps.inGhostty {
 		m.term = termColours{bg: m.cur.Background(), fg: m.cur.Foreground()}
+	} else if m.tried != "" {
+		// Outside Ghostty nothing repaints the terminal in the applied theme,
+		// which is Ghostty's: the try is over, so its colours go.
+		m.live.Reset()
 	}
 	m.tried = ""
 	return m.commitConfig()
@@ -140,13 +145,27 @@ func (m *Model) saveTheme() tea.Cmd {
 	return m.commitConfig()
 }
 
-// saveAs writes under a chosen name and applies it.
+// saveAs writes under a chosen name and applies it. A file of that name in
+// the themes directory is the user's, whoever wrote it: it is only replaced
+// after asking, unless it is the very theme being saved.
 func (m *Model) saveAs(name string) tea.Cmd {
 	name = ghostty.SanitizeName(name)
 	if name == "" {
 		m.warn("Theme name cannot be empty")
 		return nil
 	}
+	itself := m.cur.Writable() && m.cur.Name == name && m.cur.Path == filepath.Join(m.paths.ThemesDir, name)
+	if ghostty.Exists(m.paths, name) && !itself {
+		m.openConfirm(fmt.Sprintf("Your themes directory already has a theme called %s. Replace it with these colours? Its file is overwritten.", name), func(m *Model) tea.Cmd {
+			return m.writeAs(name)
+		})
+		return nil
+	}
+	return m.writeAs(name)
+}
+
+// writeAs is saveAs once the name is settled.
+func (m *Model) writeAs(name string) tea.Cmd {
 	if t, taken := m.lib.Get(name); taken && t.Source == ghostty.SourceBuiltin {
 		m.info("%s is a bundled theme; your copy will shadow it", name)
 	}
@@ -176,7 +195,9 @@ func (m *Model) suggestName() string {
 	}
 	for n := 2; n < 100; n++ {
 		candidate := fmt.Sprintf("%s-custom-%d", base, n)
-		if _, taken := m.lib.Get(candidate); !taken {
+		// The library holds only the files that read as themes: a file it
+		// skipped is still somebody's, so the disk is asked as well.
+		if _, taken := m.lib.Get(candidate); !taken && !ghostty.Exists(m.paths, candidate) {
 			return candidate
 		}
 	}
@@ -436,8 +457,12 @@ func (m *Model) tintApplied() {
 		return
 	}
 	if m.applyLive == nil {
-		m.applyLive = ghostty.OpenLive()
+		m.applyLive = openLive()
+	}
+	if m.applyLive == nil {
+		return
 	}
 	m.applyLive.Reset()
 	m.applyLive.Show(m.cur.Colors)
+	m.painted = true
 }

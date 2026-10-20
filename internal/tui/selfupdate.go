@@ -19,19 +19,21 @@ import (
 var installRelease = update.Install
 
 // offerUpdate opens the update dialog, or holds it until the dialog already
-// open is closed.
+// open is closed. While the editor has stepped aside with F2 no dialog is
+// drawn, and a key pressed there must not install anything: the offer waits.
 func (m *Model) offerUpdate(latest string) {
 	m.updateLatest = latest
-	if m.overlay == overlayNone {
+	if m.overlay == overlayNone && !m.peek {
 		m.overlay = overlayUpdate
 		return
 	}
 	m.updatePending = true
 }
 
-// showPendingUpdate opens the update dialog held back by another one.
+// showPendingUpdate opens the update dialog held back by another one, or by
+// the editor stepping aside.
 func (m *Model) showPendingUpdate() {
-	if m.updatePending && m.overlay == overlayNone {
+	if m.updatePending && m.overlay == overlayNone && !m.peek && !m.quitting {
 		m.updatePending = false
 		m.overlay = overlayUpdate
 	}

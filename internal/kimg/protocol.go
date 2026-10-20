@@ -58,14 +58,26 @@ func DeleteAll() string { return "\x1b_Ga=d,d=A,q=2\x1b\\" }
 // Delete removes one picture and frees its memory.
 func Delete(id uint32) string { return fmt.Sprintf("\x1b_Ga=d,d=I,i=%d,q=2\x1b\\", id) }
 
+// diacritics is how many rows or columns the combining marks can name.
+const diacritics = 297
+
 // PlaceholderRow is the text of one row of a picture: cols placeholder
 // cells. It carries no colour; the caller sets the foreground to IDColour.
+//
+// The marks name only the first 297 columns. Past them a cell carries the
+// row alone, and the terminal takes the column from the cell to its left,
+// one further on: the protocol infers it for a placeholder whose left
+// neighbour shows the same picture on the same row, which every cell of a
+// row is. The columns that have a mark keep it, so a row cut from the left,
+// as under a dialog, still shows the right part of the picture.
 func PlaceholderRow(row, cols int) string {
 	var b strings.Builder
 	for c := 0; c < cols; c++ {
 		b.WriteRune(kitty.Placeholder)
 		b.WriteRune(kitty.Diacritic(row))
-		b.WriteRune(kitty.Diacritic(c))
+		if c < diacritics {
+			b.WriteRune(kitty.Diacritic(c))
+		}
 	}
 	return b.String()
 }

@@ -142,39 +142,43 @@ func (m *Model) useShader(name string) tea.Cmd {
 // switchShaderOn writes the config line. Where Ghostty reloads by itself the
 // shader is on screen at once, so the question is asked whether to keep it,
 // and no answer within keepDelay puts the previous state back.
+//
+// custom-shader is repeatable: every line of it stacks another shader. The
+// one chosen replaces them all, and putting it back restores each line as it
+// was rather than the last one alone.
 func (m *Model) switchShaderOn(name, path string) tea.Cmd {
 	before, _ := m.shaderNow()
-	if before == path {
+	if before == path && len(m.tree.All("custom-shader")) == 1 {
 		m.info("%s is already on", name)
 		return nil
 	}
-	m.tree.Set("custom-shader", path)
+	was := m.tree.SnapshotKey("custom-shader")
+	m.tree.SetOnly("custom-shader", path, "disabled by ghostty-config: one shader at a time")
 	write := m.flushWritesCmd()
 	if !m.autoReloadWorks() {
 		m.info("Shader: %s — written; %s. If the window goes wrong: shader none", name, m.reloadHint())
 		return write
 	}
-	m.shaderSeq++
-	seq := m.shaderSeq
 	revert := func(m *Model) tea.Cmd {
-		m.shaderSeq++
-		if before == "" {
-			m.tree.Unset("custom-shader", "disabled by ghostty-config: no shader")
-		} else {
-			m.tree.Set("custom-shader", before)
-		}
+		m.shaderRevert = nil
+		m.tree.RestoreKey(was, "disabled by ghostty-config: no shader")
 		m.info("%s was not kept — the config is as it was", name)
 		return m.flushWritesCmd()
 	}
 	m.confirmText = fmt.Sprintf("%s is on. Keep it? Without an answer it is put back in %d seconds, in case the window can no longer be read.", name, int(keepDelay/time.Second))
 	m.confirmYes = func(m *Model) tea.Cmd {
-		m.shaderSeq++
+		m.shaderRevert = nil
 		m.info("Shader: %s — kept", name)
 		return nil
 	}
 	m.confirmNo = revert
 	m.confirmEsc = revert
+	m.shaderRevert = revert
 	m.overlay = overlayConfirm
+	m.confirmSeq++
+	// The timer answers this question and no other: by the time it fires the
+	// dialog may hold another one, such as whether to save before leaving.
+	seq := m.confirmSeq
 	return tea.Batch(write, tea.Tick(keepDelay, func(time.Time) tea.Msg { return shaderExpireMsg{seq} }))
 }
 
@@ -192,13 +196,27 @@ func (m *Model) finishShader(msg shaderDoneMsg) tea.Cmd {
 
 // expireShader puts the previous state back when the question went unanswered.
 func (m *Model) expireShader(msg shaderExpireMsg) tea.Cmd {
-	if msg.seq != m.shaderSeq || m.overlay != overlayConfirm || m.confirmNo == nil {
+	if msg.seq != m.confirmSeq || m.overlay != overlayConfirm || m.shaderRevert == nil {
 		return nil
 	}
 	m.overlay = overlayNone
-	cmd := m.confirmNo(m)
+	cmd := m.shaderRevert(m)
 	m.recompute()
 	return cmd
+}
+
+// dropUnkeptShader puts the previous shader back when the editor is left with
+// the question still open: leaving is not an answer, and the shader may be
+// why the window can no longer be read. It reports whether it did.
+func (m *Model) dropUnkeptShader() (tea.Cmd, bool) {
+	if m.shaderRevert == nil {
+		return nil, false
+	}
+	cmd := m.shaderRevert(m)
+	if m.overlay == overlayConfirm {
+		m.overlay = overlayNone
+	}
+	return cmd, true
 }
 
 // packOptions lists the packs with how much of each is installed.

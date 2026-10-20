@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/charmbracelet/x/ansi/kitty"
 )
 
 func testPal() [16]string {
@@ -36,6 +38,50 @@ func TestPlaceholderRowsAreOneCellPerColumn(t *testing.T) {
 	row := PlaceholderRow(2, 5)
 	if n := strings.Count(row, "\U0010EEEE"); n != 5 {
 		t.Fatalf("5 placeholder cells wanted, got %d", n)
+	}
+}
+
+// The marks name 297 columns; a wider row names the rest by leaving the
+// column out, for the terminal to count on from the cell to the left.
+func TestPlaceholderRowsWiderThanTheMarks(t *testing.T) {
+	if kitty.Diacritic(diacritics-1) == kitty.Diacritic(0) || kitty.Diacritic(diacritics) != kitty.Diacritic(0) {
+		t.Fatalf("the library no longer has %d marks", diacritics)
+	}
+	cells := strings.Split(PlaceholderRow(3, 400), string(kitty.Placeholder))[1:]
+	if len(cells) != 400 {
+		t.Fatalf("%d cells, want 400", len(cells))
+	}
+	for c, cell := range cells {
+		marks := []rune(cell)
+		if len(marks) == 0 || marks[0] != kitty.Diacritic(3) {
+			t.Fatalf("cell %d does not name row 3: %q", c, cell)
+		}
+		switch {
+		case c < diacritics && (len(marks) != 2 || marks[1] != kitty.Diacritic(c)):
+			t.Fatalf("cell %d does not name its column: %q", c, cell)
+		case c >= diacritics && len(marks) != 1:
+			t.Fatalf("cell %d names a column the marks cannot: %q", c, cell)
+		}
+	}
+}
+
+// Every size asked for makes a face, and a resize asks for many: the cache
+// stays bounded, and a face handed out just before it starts over still
+// knows what it is.
+func TestFaceCacheIsBounded(t *testing.T) {
+	last := Face(false, false, 10)
+	for i := 0; i < 4*maxFaces; i++ {
+		f := Face(false, false, 10+float64(i)/10)
+		if MonoOf(last) == last || Covers(last, '→') {
+			t.Fatalf("after %d sizes a face handed out a moment ago forgot what it is", i)
+		}
+		last = f
+	}
+	faceMu.Lock()
+	n := len(faces)
+	faceMu.Unlock()
+	if n > maxFaces {
+		t.Fatalf("%d faces cached, want at most %d", n, maxFaces)
 	}
 }
 

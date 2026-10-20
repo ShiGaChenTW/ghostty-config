@@ -39,8 +39,43 @@ func newImageStore(out io.Writer) *imageStore {
 	// Each run numbers its pictures from a point of its own. A terminal keeps
 	// what an earlier run left on the alternate screen, and a picture sent
 	// under a number still in use there would be drawn over the old one.
-	base := uint32(0x010000 + randInt(0xD00000))
+	base := uint32(firstID + randInt(0xD00000))
 	return &imageStore{ids: map[string]uint32{}, used: map[string]int{}, next: base, out: out}
+}
+
+// The numbers a run gives its pictures. A number reaches the terminal as a
+// 24-bit colour, so it must stay below lastID; past it the numbering starts
+// again from firstID, the lowest a run starts from.
+const (
+	firstID = 0x010000
+	lastID  = 0xFFFFFF
+)
+
+// newID is the next number free for a picture. The numbers of pictures still
+// held are passed over, which matters once the numbering has wrapped: the
+// store holds a few hundred at most, so a free one is never far.
+func (s *imageStore) newID() uint32 {
+	for {
+		id := s.next
+		s.next++
+		if s.next > lastID {
+			s.next = firstID
+		}
+		if id < firstID || id > lastID || s.holds(id) {
+			continue
+		}
+		return id
+	}
+}
+
+// holds reports whether a picture the store holds has this number.
+func (s *imageStore) holds(id uint32) bool {
+	for _, held := range s.ids {
+		if held == id {
+			return true
+		}
+	}
+	return false
 }
 
 // maxImages bounds what the terminal holds: past it the oldest are freed.
@@ -80,8 +115,7 @@ func (s *imageStore) ensure(key string, cols, rows int, draw func() []byte) uint
 		s.touch(key)
 		return id
 	}
-	id := s.next
-	s.next++
+	id := s.newID()
 	s.ids[key] = id
 	s.touch(key)
 	data := draw()
@@ -98,8 +132,7 @@ func (s *imageStore) ensureRGBA(key string, p []byte, w, h, cols, rows int, file
 		s.touch(key)
 		return id
 	}
-	id := s.next
-	s.next++
+	id := s.newID()
 	s.ids[key] = id
 	s.touch(key)
 	path := ""
@@ -151,6 +184,7 @@ func (m *Model) dropPictures() tea.Cmd {
 	if m.imgs == nil {
 		return nil
 	}
+	m.px.removeTempFiles()
 	return tea.Raw(m.imgs.dropAll())
 }
 

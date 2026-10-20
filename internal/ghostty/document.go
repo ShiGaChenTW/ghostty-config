@@ -38,6 +38,19 @@ type Document struct {
 	Dirty  bool
 	// Ephemeral documents are theme files or fixtures parsed from text.
 	trailingNewline bool
+	// disk is what the file held when it was read or last written, which is
+	// how a save notices that someone else edited it in the meantime.
+	disk string
+}
+
+// changedOnDisk reports whether the file no longer holds what this document
+// was read from or last wrote.
+func (d *Document) changedOnDisk() bool {
+	data, err := os.ReadFile(d.Path)
+	if err != nil {
+		return d.Exists
+	}
+	return !d.Exists || string(data) != d.disk
 }
 
 // ParseDocument reads a config file. A missing file yields an empty,
@@ -53,6 +66,7 @@ func ParseDocument(path string) (*Document, error) {
 	doc := ParseText(string(data))
 	doc.Path = path
 	doc.Exists = true
+	doc.disk = string(data)
 	return doc, nil
 }
 

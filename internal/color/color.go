@@ -25,14 +25,32 @@ func ParseHex(s string) (RGB, error) {
 	if len(t) == 3 {
 		t = string([]byte{t[0], t[0], t[1], t[1], t[2], t[2]})
 	}
+	// Every character must be a hex digit: a scanner would accept a sign or
+	// stop at the first bad digit, turning "#ff000g" into a plausible red.
 	if len(t) != 6 {
 		return RGB{}, fmt.Errorf("not a hex colour: %q", s)
 	}
-	var r, g, b int
-	if _, err := fmt.Sscanf(strings.ToLower(t), "%02x%02x%02x", &r, &g, &b); err != nil {
-		return RGB{}, fmt.Errorf("not a hex colour: %q", s)
+	var v [6]int
+	for i := 0; i < 6; i++ {
+		d, ok := hexDigit(t[i])
+		if !ok {
+			return RGB{}, fmt.Errorf("not a hex colour: %q", s)
+		}
+		v[i] = d
 	}
-	return RGB{r, g, b}, nil
+	return RGB{v[0]<<4 | v[1], v[2]<<4 | v[3], v[4]<<4 | v[5]}, nil
+}
+
+func hexDigit(c byte) (int, bool) {
+	switch {
+	case c >= '0' && c <= '9':
+		return int(c - '0'), true
+	case c >= 'a' && c <= 'f':
+		return int(c-'a') + 10, true
+	case c >= 'A' && c <= 'F':
+		return int(c-'A') + 10, true
+	}
+	return 0, false
 }
 
 // Normalize returns hex in canonical #rrggbb form, or fallback when it does

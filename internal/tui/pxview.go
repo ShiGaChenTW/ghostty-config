@@ -1357,7 +1357,10 @@ func maxF(a, b float32) float32 {
 // --- dialogs --------------------------------------------------------------------------------
 
 func (m *Model) pxOverlay(c *pix.Canvas, p pxPal, f pxFonts, g pxGeo) {
-	// The screen behind steps back.
+	// The screen behind steps back, and stops answering to the mouse: a
+	// click on the dimmed footer's Enter would otherwise press Enter in the
+	// dialog, and confirm what it asks.
+	m.regions = m.regions[:0]
 	c.Dim(stdcolor.NRGBA{p.bg.R, p.bg.G, p.bg.B, 170})
 	surface := pix.Hex(color.Blend(p.ui.bg, p.ui.fg, 0.07), 1)
 	card := func(w, h float32) (float32, float32) {
@@ -1564,6 +1567,13 @@ func (m *Model) pxBridge(c *pix.Canvas, p pxPal, lines []string, x, y, w, h floa
 	if cols < 4 || len(lines) == 0 {
 		return
 	}
+	// Shift+arrows and the wheel scroll what does not fit, never past the
+	// last line, as in the text interface.
+	fit := int(h / lh)
+	if m.previewScrl > len(lines)-fit {
+		m.previewScrl = maxInt(0, len(lines)-fit)
+	}
+	lines = lines[m.previewScrl:]
 	// Symbols the embedded fonts lack become words before the cells are laid
 	// out, so the words take the cells they need.
 	words := strings.NewReplacer("⌘", "Cmd+", "⇧", "Shift+", "⌥", "Opt+", "⌃", "Ctrl+", "⏎", "Enter", "⌫", "Bksp", "●", "•", "❯", "›", "✎", "")
@@ -1578,7 +1588,8 @@ func (m *Model) pxBridge(c *pix.Canvas, p pxPal, lines []string, x, y, w, h floa
 	placeholder := string(kitty.Placeholder)
 	for row := 0; row < len(lines); row++ {
 		by := y + float32(row)*lh
-		if by > y+h {
+		if by+lh > y+h {
+			// A line cut in half reads as a smudge; it waits for a scroll.
 			break
 		}
 		for col := 0; col < cols; {

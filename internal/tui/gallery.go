@@ -492,6 +492,7 @@ func (m *Model) tryHere() tea.Cmd {
 	m.live.Reset()
 	m.live.Show(m.cur.Colors)
 	m.tried = m.cur.Name
+	m.painted = true
 	m.term = termColours{bg: m.cur.Background(), fg: m.cur.Foreground()}
 	applied := "your own colours"
 	if m.applied != "" {

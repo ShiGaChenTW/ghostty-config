@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	uv "github.com/charmbracelet/ultraviolet"
@@ -367,5 +368,157 @@ func TestPicturesAreFreedOnTheWayOut(t *testing.T) {
 	other := newImageStore(nil)
 	if other.next == newImageStore(nil).next && other.next == h.m.imgs.next {
 		t.Fatal("runs number their pictures alike")
+	}
+}
+
+// A dialog dims the screen behind it, and what is dimmed answers to no
+// click: the footer's Enter, under the dialog, must not confirm it.
+func TestTheDimmedFooterIsNotAButton(t *testing.T) {
+	h := newPixHarness(t, "midnight")
+	h.m.jumpToGroup("Window")
+	enter, ok := h.find(hitButton, -1, "enter")
+	if !ok {
+		t.Fatal("the footer has no Enter button")
+	}
+	confirmed := false
+	h.m.openConfirm("Delete the theme file matcha-whisk from your themes directory? A backup is not kept.", func(*Model) tea.Cmd {
+		confirmed = true
+		return nil
+	})
+	if _, ok := h.find(hitButton, -1, "enter"); ok {
+		t.Fatal("the footer's Enter is still a button under the dialog")
+	}
+	h.click(enter.x+enter.w/2, enter.y)
+	if confirmed || h.m.overlay != overlayConfirm {
+		t.Fatalf("a click on the dimmed footer confirmed the dialog (overlay %d)", h.m.overlay)
+	}
+	yes, ok := h.find(hitButton, -1, "confirm-yes")
+	if !ok {
+		t.Fatal("the dialog has no Yes button")
+	}
+	h.click(yes.x+yes.w/2, yes.y)
+	if !confirmed {
+		t.Fatal("Yes did not confirm")
+	}
+}
+
+// The rows go through temporary files only when they are written to the
+// terminal itself: written anywhere else nothing would read the files, and
+// nothing would delete them.
+func TestPicturesGoInlineWhenNotWrittenToATerminal(t *testing.T) {
+	t.Setenv("SSH_CONNECTION", "")
+	t.Setenv("SSH_TTY", "")
+	var out bytes.Buffer
+	if filesReachTerminal(&out) || filesReachTerminal(io.Discard) {
+		t.Fatal("pictures written to a buffer would go through files")
+	}
+	f, err := os.CreateTemp(t.TempDir(), "out")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if filesReachTerminal(f) {
+		t.Fatal("pictures written to a plain file would go through files")
+	}
+	h := newHarnessWith(t, pixConfig, Options{NoReload: true, Images: true, ImgOut: &out, Pixel: true, PixCell: [2]int{17, 38}})
+	h.m.View()
+	if h.m.px.seq != 0 || strings.Contains(out.String(), ",t=t;") {
+		t.Fatal("a frame written to a buffer went through temporary files")
+	}
+	if !strings.Contains(out.String(), ",o=z,") {
+		t.Fatal("the rows were not sent inline")
+	}
+}
+
+// Files of ours older than a few minutes were never read and never will be:
+// a new run sweeps them away, and leaves the rest alone.
+func TestStaleTemporaryFilesAreSwept(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name string, age time.Duration) string {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		at := time.Now().Add(-age)
+		if err := os.Chtimes(p, at, at); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	stale := write(tempPrefix+"1-1", time.Hour)
+	fresh := write(tempPrefix+"1-2", time.Second)
+	other := write("tty-graphics-protocol-someone-else", time.Hour)
+	sweepTempFiles(dir, staleTempFile)
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Fatal("a stale file was left")
+	}
+	for _, p := range []string{fresh, other} {
+		if _, err := os.Stat(p); err != nil {
+			t.Fatalf("%s was swept: %v", filepath.Base(p), err)
+		}
+	}
+}
+
+// On the way out a run removes the files it wrote that the terminal has
+// not read.
+func TestLeftoverTemporaryFilesAreRemovedOnTheWayOut(t *testing.T) {
+	t.Setenv("TMPDIR", t.TempDir())
+	h := newPixHarness(t, "midnight")
+	h.m.px.viaFile = true
+	h.m.imgs.reset()
+	h.m.render()
+	if h.m.px.seq == 0 {
+		t.Fatal("no row went through a file")
+	}
+	left, _ := filepath.Glob(filepath.Join(os.TempDir(), tempPrefix+"*"))
+	if len(left) == 0 {
+		t.Fatal("no file was written")
+	}
+	h.m.dropPictures()
+	if left, _ := filepath.Glob(filepath.Join(os.TempDir(), tempPrefix+"*")); len(left) != 0 {
+		t.Fatalf("%d files were left behind", len(left))
+	}
+}
+
+// The panel beside the list scrolls, as in the text interface: what it
+// shows moves with the scroll, which stops at the last line, and a line
+// that does not fit whole is left for the next scroll.
+func TestThePanelScrolls(t *testing.T) {
+	h := newPixHarness(t, "midnight")
+	m := h.m
+	p := newPxPal(m.panelChrome())
+	var lines []string
+	for i := 0; i < 30; i++ {
+		lines = append(lines, fmt.Sprintf("line %02d of the explanation", i))
+	}
+	const lh = 19
+	draw := func(scroll int, hgt float32) *pix.Canvas {
+		m.previewScrl = scroll
+		c := pix.New(400, 400, 1)
+		c.Clear(p.bg)
+		m.pxBridge(c, p, lines, 0, 0, 400, hgt)
+		return c
+	}
+	top := draw(0, 10*lh)
+	if m.previewScrl != 0 {
+		t.Fatalf("the scroll moved to %d by itself", m.previewScrl)
+	}
+	down := draw(3, 10*lh)
+	if bytes.Equal(top.Img.Pix, down.Img.Pix) {
+		t.Fatal("scrolling the panel changed nothing drawn")
+	}
+	draw(1000, 10*lh)
+	if m.previewScrl != len(lines)-10 {
+		t.Fatalf("the scroll went to %d, want it to stop at %d", m.previewScrl, len(lines)-10)
+	}
+	// Two lines and a half: the half is not drawn.
+	half := draw(0, 2.5*lh)
+	bg := half.Img.RGBAAt(0, 0)
+	for y := 2 * lh; y < 2*lh+lh/2; y++ {
+		for x := 0; x < 400; x++ {
+			if half.Img.RGBAAt(x, y) != bg {
+				t.Fatalf("the third line was drawn cut in half (pixel %d,%d)", x, y)
+			}
+		}
 	}
 }

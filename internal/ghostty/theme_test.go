@@ -1,6 +1,8 @@
 package ghostty
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -69,6 +71,43 @@ func TestLabelsAndSections(t *testing.T) {
 	}
 	if n != len(ColorKeys) {
 		t.Fatalf("sections cover %d keys, ColorKeys has %d", n, len(ColorKeys))
+	}
+}
+
+func TestThemeOutsideThemesDirIsReferencedByPath(t *testing.T) {
+	p, dir := fixture(t, map[string]string{
+		"elsewhere/foo":  OwnedHeader + " foo\n\nbackground = #000000\n",
+		"xdg/themes/bar": "background = #111111\n",
+	})
+	lib := LoadLibrary(p)
+	path := filepath.Join(dir, "elsewhere", "foo")
+	th, ok := lib.Get(path)
+	if !ok {
+		t.Fatal("an absolute theme path should resolve")
+	}
+	if th.ConfigValue() != path {
+		t.Fatalf("ConfigValue = %q, want the full path", th.ConfigValue())
+	}
+	if th.Deletable() || th.Writable() {
+		t.Fatal("a theme outside the themes directory must be neither deletable nor writable")
+	}
+	if err := DeleteTheme(th); err == nil {
+		t.Fatal("delete should be refused")
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatal("the file was deleted")
+	}
+	bar, _ := lib.Get("bar")
+	if bar.ConfigValue() != "bar" || !bar.Deletable() {
+		t.Fatalf("a theme in the themes directory is named, got %q", bar.ConfigValue())
+	}
+	inside, _ := lib.Get(filepath.Join(p.ThemesDir, "bar"))
+	if inside.ConfigValue() != "bar" {
+		t.Fatalf("an absolute path into the themes directory is written by name, got %q", inside.ConfigValue())
+	}
+	saved, err := SaveTheme(p, th, "foo-custom")
+	if err != nil || saved.ConfigValue() != "foo-custom" || !saved.Writable() {
+		t.Fatalf("a saved copy belongs to the themes directory: %v", err)
 	}
 }
 

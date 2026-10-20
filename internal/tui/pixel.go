@@ -4,9 +4,14 @@ import (
 	"fmt"
 	"hash/maphash"
 	"image"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
+
+	"github.com/charmbracelet/x/term"
 
 	"github.com/vitruves/ghostty-config/internal/pix"
 )
@@ -49,10 +54,67 @@ type pixEngine struct {
 
 func newPixEngine(o Options) *pixEngine {
 	e := &pixEngine{cw: o.PixCell[0], ch: o.PixCell[1], seed: maphash.MakeSeed(), pics: map[string]*image.RGBA{}}
-	// A temporary file costs nothing on the pty, but only a terminal on this
-	// machine can read it.
-	e.viaFile = os.Getenv("SSH_CONNECTION") == "" && os.Getenv("SSH_TTY") == ""
+	e.viaFile = filesReachTerminal(o.ImgOut)
+	// Files an earlier run left behind, because the terminal never read
+	// them or the run was killed, would pile up in the temporary directory
+	// for good: sweep them out, without holding up the first frame.
+	sweepOnce.Do(func() { go sweepTempFiles(os.TempDir(), staleTempFile) })
 	return e
+}
+
+var sweepOnce sync.Once
+
+// tempPrefix starts the name of every file the pixels go through. Ghostty
+// only reads a temporary file whose name says it is meant for it.
+const tempPrefix = "tty-graphics-protocol-ghostty-config-"
+
+// staleTempFile is how old a file of ours must be to count as abandoned.
+// The terminal reads one within milliseconds of the row that names it.
+const staleTempFile = 5 * time.Minute
+
+// filesReachTerminal is whether the pixels can go through temporary files
+// the terminal reads and deletes. A temporary file costs nothing on the pty,
+// but only a terminal on this machine reads it, and only when the pictures
+// are written to that terminal itself: written anywhere else, as in tests,
+// nothing would ever read the files or delete them.
+func filesReachTerminal(out io.Writer) bool {
+	if os.Getenv("SSH_CONNECTION") != "" || os.Getenv("SSH_TTY") != "" {
+		return false
+	}
+	if out == nil {
+		out = os.Stdout
+	}
+	f, ok := out.(*os.File)
+	return ok && term.IsTerminal(f.Fd())
+}
+
+// sweepTempFiles removes the files of ours in dir older than age.
+func sweepTempFiles(dir string, age time.Duration) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	cutoff := time.Now().Add(-age)
+	for _, ent := range entries {
+		if !strings.HasPrefix(ent.Name(), tempPrefix) || !ent.Type().IsRegular() {
+			continue
+		}
+		if info, err := ent.Info(); err == nil && info.ModTime().Before(cutoff) {
+			_ = os.Remove(filepath.Join(dir, ent.Name()))
+		}
+	}
+}
+
+// removeTempFiles removes what this run left in the temporary directory:
+// on the way out, files the terminal has not read yet never will be.
+func (e *pixEngine) removeTempFiles() {
+	if e == nil || e.seq == 0 {
+		return
+	}
+	paths, _ := filepath.Glob(filepath.Join(os.TempDir(), fmt.Sprintf("%s%d-*", tempPrefix, os.Getpid())))
+	for _, p := range paths {
+		_ = os.Remove(p)
+	}
 }
 
 // pixelOn is whether this frame is drawn as a picture.
@@ -83,7 +145,7 @@ func (m *Model) setPixCell(cw, ch int) bool {
 // not, and they go inline instead.
 func (e *pixEngine) tempFile(p []byte) string {
 	e.seq++
-	path := filepath.Join(os.TempDir(), fmt.Sprintf("tty-graphics-protocol-ghostty-config-%d-%d", os.Getpid(), e.seq))
+	path := filepath.Join(os.TempDir(), fmt.Sprintf("%s%d-%d", tempPrefix, os.Getpid(), e.seq))
 	if err := os.WriteFile(path, p, 0o600); err != nil {
 		return ""
 	}

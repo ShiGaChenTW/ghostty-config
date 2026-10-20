@@ -106,6 +106,20 @@ type Theme struct {
 	Passthrough []string
 	// Note is the first comment of the file, shown as the theme's description.
 	Note string
+	// external marks a theme the config names by an absolute path outside
+	// the user's themes directory. Ghostty cannot find it by name, and the
+	// file is not this tool's to rewrite or delete.
+	external bool
+}
+
+// ConfigValue is what `theme =` must say for Ghostty to load this theme:
+// its name, or its full path when it lives outside the directories Ghostty
+// searches.
+func (t *Theme) ConfigValue() string {
+	if t.external {
+		return t.Path
+	}
+	return t.Name
 }
 
 // Clone returns an independent copy.
@@ -135,7 +149,7 @@ func (t *Theme) Foreground() string { return color.Normalize(t.Get("foreground")
 func (t *Theme) IsDark() bool { return color.IsDark(t.Background()) }
 
 // Writable reports whether saving may overwrite the file in place.
-func (t *Theme) Writable() bool { return t.Source == SourceOwned }
+func (t *Theme) Writable() bool { return t.Source == SourceOwned && !t.external }
 
 // Equal compares the managed colours of two themes.
 func (t *Theme) Equal(o *Theme) bool {
@@ -277,13 +291,14 @@ func FromScheme(s *color.Scheme, note string) *Theme {
 // a user file shadows a bundled one of the same name, exactly as Ghostty
 // resolves `theme =`.
 type Library struct {
-	Themes []*Theme
-	byName map[string]*Theme
+	Themes    []*Theme
+	byName    map[string]*Theme
+	themesDir string
 }
 
 // LoadLibrary scans the user themes directory and the resources directories.
 func LoadLibrary(paths Paths) *Library {
-	lib := &Library{byName: make(map[string]*Theme)}
+	lib := &Library{byName: make(map[string]*Theme), themesDir: paths.ThemesDir}
 	add := func(dir string, source Source) {
 		entries, err := os.ReadDir(dir)
 		if err != nil {
@@ -322,10 +337,22 @@ func (l *Library) Get(name string) (*Theme, bool) {
 	}
 	if filepath.IsAbs(name) {
 		if t, err := ParseThemeFile(name, SourceUser); err == nil {
+			t.external = !inDir(name, l.themesDir)
 			return t, true
 		}
 	}
 	return nil, false
+}
+
+// inDir reports whether path sits directly in dir, which is where Ghostty
+// looks a theme name up.
+func inDir(path, dir string) bool {
+	if dir == "" {
+		return false
+	}
+	a, err1 := filepath.Abs(filepath.Dir(path))
+	b, err2 := filepath.Abs(dir)
+	return err1 == nil && err2 == nil && a == b
 }
 
 // Names returns every theme name in display order.
@@ -353,6 +380,7 @@ func SaveTheme(paths Paths, t *Theme, name string) (*Theme, error) {
 	saved.Name = name
 	saved.Path = filepath.Join(paths.ThemesDir, name)
 	saved.Source = SourceOwned
+	saved.external = false
 	if err := writeFileAtomic(saved.Path, []byte(saved.Render(OwnedHeader)), 0o644); err != nil {
 		return nil, err
 	}
@@ -360,8 +388,12 @@ func SaveTheme(paths Paths, t *Theme, name string) (*Theme, error) {
 }
 
 // Deletable reports whether the theme is a file in the user's themes
-// directory. Bundled themes belong to Ghostty and are read only.
+// directory. Bundled themes belong to Ghostty and are read only, and a file
+// the config merely points at elsewhere is not ours to remove.
 func (t *Theme) Deletable() bool {
+	if t.external {
+		return false
+	}
 	switch t.Source {
 	case SourceOwned, SourceCollection, SourceUser:
 		return t.Path != ""
@@ -374,6 +406,9 @@ func (t *Theme) Deletable() bool {
 // someone else.
 func DeleteTheme(t *Theme) error {
 	if !t.Deletable() {
+		if t.external {
+			return fmt.Errorf("%s is outside your themes directory and cannot be deleted here", t.Path)
+		}
 		return fmt.Errorf("%s is bundled with Ghostty and cannot be deleted", t.Name)
 	}
 	return os.Remove(t.Path)

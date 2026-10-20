@@ -31,6 +31,16 @@ func OpenLive() *Live {
 	return &Live{tty: tty}
 }
 
+// LiveOn paints through a file that is already open, such as a terminal
+// reached another way, or a plain file in a test that reads back what was
+// sent. Close closes it.
+func LiveOn(f *os.File) *Live {
+	if f == nil {
+		return nil
+	}
+	return &Live{tty: f}
+}
+
 // Close releases the terminal.
 func (l *Live) Close() {
 	if l == nil || l.tty == nil {
@@ -86,6 +96,13 @@ func (l *Live) Reset() {
 // ErrReloadUnsupported is returned where no way to ask Ghostty to reload exists.
 var ErrReloadUnsupported = errors.New("no way to reload Ghostty from here on this platform")
 
+// ErrNotFrontmost is returned when Ghostty was not the app in front, so the
+// reload keystroke was not sent: it would have gone to whichever app was.
+var ErrNotFrontmost = errors.New("Ghostty was not in front, so it was not asked to reload")
+
+// notFrontmost is what the script answers when it sent nothing.
+const notFrontmost = "ghostty-config:not-frontmost"
+
 // Reload asks the running Ghostty to re-read its configuration.
 //
 // Ghostty has no reload command line and does not watch its files, but it
@@ -99,11 +116,7 @@ func Reload(binary string) error {
 		return ErrReloadUnsupported
 	}
 	keys, mods := reloadKeystroke(binary)
-	script := fmt.Sprintf(`tell application "System Events"
-	set ghostty to first application process whose bundle identifier is "com.mitchellh.ghostty"
-	tell ghostty to keystroke %q using {%s}
-end tell`, keys, mods)
-	cmd := exec.Command("osascript", "-e", script)
+	cmd := exec.Command("osascript", "-e", reloadScript(keys, mods))
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		msg := strings.TrimSpace(string(output))
@@ -115,7 +128,22 @@ end tell`, keys, mods)
 		}
 		return fmt.Errorf("could not reload Ghostty: %s", msg)
 	}
+	if strings.TrimSpace(string(output)) == notFrontmost {
+		return ErrNotFrontmost
+	}
 	return nil
+}
+
+// reloadScript is the AppleScript that sends the reload keystroke. System
+// Events types into whichever app is in front, whatever process the tell
+// names, so the keystroke is only sent while that app is Ghostty; otherwise
+// the script answers notFrontmost and sends nothing.
+func reloadScript(keys, mods string) string {
+	return fmt.Sprintf(`tell application "System Events"
+	set ghostty to first application process whose bundle identifier is "com.mitchellh.ghostty"
+	if frontmost of ghostty is false then return %q
+	tell ghostty to keystroke %q using {%s}
+end tell`, notFrontmost, keys, mods)
 }
 
 // reloadKeystroke reads the reload_config binding from `+list-keybinds` so a

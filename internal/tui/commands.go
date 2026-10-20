@@ -296,9 +296,10 @@ func (m *Model) buildCommands() []*command {
 				// reload Ghostty and resize every cell under the picture.
 				return nil
 			}
-			if m.fontFamily == "" && strings.TrimSpace(m.arg) == "" && !m.browsed {
-				// The list was only opened: with no family configured the
-				// highlight rests on the first one, which nobody chose.
+			if !m.browsed {
+				// The list was only opened or filtered: the highlight rests on
+				// whatever matched first, which nobody chose. Typing a name
+				// slowly must not write every family it passes through.
 				return nil
 			}
 			return m.pickFamily(*opt.family)
@@ -336,7 +337,9 @@ func (m *Model) buildCommands() []*command {
 			return out
 		},
 		onMove: func(m *Model, opt *option) tea.Cmd {
-			if opt == nil || m.browsesFonts() {
+			// Only a move by hand writes: typing filters the list, and its
+			// first match is nobody's choice.
+			if opt == nil || m.browsesFonts() || !m.browsed {
 				return nil
 			}
 			m.setFontStyle(opt.value)
@@ -365,7 +368,8 @@ func (m *Model) buildCommands() []*command {
 			return out
 		},
 		onMove: func(m *Model, opt *option) tea.Cmd {
-			if opt == nil {
+			// Typing "size 2" on the way to 20 must not write 20 first.
+			if opt == nil || !m.browsed {
 				return nil
 			}
 			size, _ := strconv.ParseFloat(opt.value, 64)
@@ -440,6 +444,11 @@ func (m *Model) buildCommands() []*command {
 		},
 		onMove: func(m *Model, opt *option) tea.Cmd {
 			if opt != nil {
+				// Walking the list shows each interface, and only Enter keeps
+				// one: remember what was in effect to put it back.
+				if !m.previewingInterface {
+					m.interfaceWas, m.previewingInterface = m.state.Interface, true
+				}
 				m.state.Interface = opt.value
 			}
 			return nil
@@ -448,6 +457,7 @@ func (m *Model) buildCommands() []*command {
 			if opt == nil {
 				return nil
 			}
+			m.previewingInterface = false
 			m.state.Interface = opt.value
 			_ = m.state.Save()
 			m.info("Interface: %s", opt.value)
@@ -516,16 +526,21 @@ func settingCommand(s setting) *command {
 		current := s.get(m)
 		var out []option
 		if s.numeric {
+			// The config may write a value its own way, 0.9 for 0.90: compare
+			// numbers, not labels.
+			now, nowOK := parseNumber(current)
 			for v := s.min; v <= s.max+1e-9; v += s.step {
 				label := s.format(roundStep(v, s.step))
 				if arg != "" && !strings.HasPrefix(label, strings.TrimSpace(arg)) {
 					continue
 				}
+				at, _ := parseNumber(label)
+				isCurrent := label == current || (nowOK && sameNumber(at, now, s.step))
 				detail := ""
-				if label == current {
+				if isCurrent {
 					detail = "current"
 				}
-				out = append(out, option{label: label, detail: detail, value: label, current: label == current})
+				out = append(out, option{label: label, detail: detail, value: label, current: isCurrent})
 			}
 			return out
 		}
@@ -565,6 +580,23 @@ func settingCommand(s setting) *command {
 	}
 	c.preview = func(m *Model, opt *option, width int) []string { return previewSettingPanel(m, s, opt, width) }
 	return c
+}
+
+// parseNumber reads a numeric setting as the config writes it, a percent
+// sign allowed.
+func parseNumber(v string) (float64, bool) {
+	f, err := strconv.ParseFloat(strings.TrimSuffix(strings.TrimSpace(v), "%"), 64)
+	return f, err == nil
+}
+
+// sameNumber reports whether two values of a setting are the same step,
+// allowing for the error that adding steps up accumulates.
+func sameNumber(a, b, step float64) bool {
+	d := a - b
+	if d < 0 {
+		d = -d
+	}
+	return d < step/1000
 }
 
 func roundStep(v, step float64) float64 {

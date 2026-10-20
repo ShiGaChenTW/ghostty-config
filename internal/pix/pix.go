@@ -222,9 +222,19 @@ func (c *Canvas) FaceIn(f *Font, px float32) font.Face {
 	if err != nil {
 		return c.Face(true, false, px)
 	}
+	if len(f.faces) >= maxFaces {
+		// Every scale the canvas is drawn at makes faces of its own, and
+		// the scale follows the terminal's font; past a bound the cache
+		// starts over. The faces handed out stay good: nothing looks
+		// them up here.
+		f.faces = map[int]font.Face{}
+	}
 	f.faces[key] = face
 	return face
 }
+
+// maxFaces bounds the faces a font file keeps.
+const maxFaces = 64
 
 // substitutes stand in for symbols no embedded font draws.
 var substitutes = map[rune]string{

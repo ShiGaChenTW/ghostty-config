@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -99,6 +100,16 @@ type Model struct {
 	galTop   int
 	galAlign bool
 	tried    string
+	// painted is whether any colour was pushed into the terminal this
+	// session, by a try or by Enter, so that every way out puts them back;
+	// appliedHere is whether a theme was applied this session.
+	painted     bool
+	appliedHere bool
+	// interfaceWas is the interface in effect before the list of them was
+	// walked, put back unless Enter chose one; previewingInterface says a
+	// walk is under way.
+	interfaceWas        string
+	previewingInterface bool
 
 	// Palette edit mode: the prompt becomes a slot editor.
 	editing  bool
@@ -152,10 +163,15 @@ type Model struct {
 	confirmYes  func(*Model) tea.Cmd
 	confirmNo   func(*Model) tea.Cmd // nil means "no" only closes the question
 	confirmEsc  func(*Model) tea.Cmd // nil means Esc only closes the question
-	shaderSeq   int                  // which "keep this shader?" is still waiting
-	busyText    string
-	messageText string
-	spin        spinner.Model
+	// confirmSeq tells each question asked from the ones before it, so that a
+	// timer meant for one never answers another.
+	confirmSeq int
+	// shaderRevert puts the previous shader back while "keep this shader?"
+	// waits for an answer; nil otherwise.
+	shaderRevert func(*Model) tea.Cmd
+	busyText     string
+	messageText  string
+	spin         spinner.Model
 
 	// Status line.
 	status     string
@@ -311,6 +327,10 @@ type (
 // Update dispatches to the overlay or the prompt.
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	model, cmd := m.update(msg)
+	// An update offered while another dialog was open, or while the editor
+	// stepped aside, is shown as soon as both are over, whichever way the
+	// dialog was closed.
+	m.showPendingUpdate()
 	if load := m.wantSpecimen(); load != nil {
 		cmd = tea.Batch(cmd, load)
 	}
@@ -369,6 +389,12 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.flushWrites()
 	case reloadDoneMsg:
 		if msg.seq != m.reloadSeq {
+			return m, nil
+		}
+		if errors.Is(msg.err, ghostty.ErrNotFrontmost) {
+			// Another app was in front, so no keystroke was sent: the next
+			// change tries again, and this one needs a hand.
+			m.warn("Ghostty was not in front: %s", m.reloadHint())
 			return m, nil
 		}
 		if msg.err != nil {
@@ -441,13 +467,15 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+d":
 			return m.quit()
 		}
-		if m.overlay != overlayNone {
-			return m.updateOverlay(msg)
-		}
 		if m.peek {
-			// Any key brings the editor back, on a fresh alternate screen.
+			// Any key brings the editor back, on a fresh alternate screen. It
+			// does nothing else: a dialog that opened meanwhile was not on
+			// screen, and must be seen before a key can answer it.
 			m.peek = false
 			return m, m.armImages()
+		}
+		if m.overlay != overlayNone {
+			return m.updateOverlay(msg)
 		}
 		if msg.String() == "f2" {
 			m.peek = true
@@ -606,6 +634,9 @@ func (m *Model) autoReloadWorks() bool {
 // leaving must never change the configuration. Unsaved edits are the one
 // thing worth a question, because leaving would lose them.
 func (m *Model) quit() (tea.Model, tea.Cmd) {
+	// A shader still waiting for "keep it?" is put back before anything else:
+	// leaving is no answer, and its timer must not answer the next question.
+	unkept, _ := m.dropUnkeptShader()
 	if m.cur != nil && m.dirty {
 		name := m.cur.Name
 		if !m.cur.Writable() {
@@ -623,9 +654,10 @@ func (m *Model) quit() (tea.Model, tea.Cmd) {
 		m.confirmNo = func(m *Model) tea.Cmd { return m.leave() }
 		m.confirmEsc = nil
 		m.overlay = overlayConfirm
-		return m, nil
+		m.confirmSeq++
+		return m, unkept
 	}
-	return m, m.leave()
+	return m, tea.Sequence(unkept, m.leave())
 }
 
 // leave writes what was explicitly changed, puts the terminal's colours
@@ -642,33 +674,61 @@ func (m *Model) leave() tea.Cmd {
 		}
 		m.exitNote += m.reloadHint()
 	}
-	if m.tried != "" {
-		// A theme was painted into the terminal for a try: put back what the
-		// configuration says.
-		m.live.Reset()
+	m.RestoreColours()
+	if m.cur != nil && m.cur.Name != m.applied && m.exitNote == "" && m.applied != "" {
+		m.exitNote = fmt.Sprintf("%s was only previewed; %s is still applied", m.cur.Name, m.applied)
 	}
-	if m.cur != nil && m.cur.Name != m.applied {
-		m.live.Reset()
-		if t, ok := m.lib.Get(m.applied); ok {
-			m.live.Show(t.Colors)
-		}
-		if m.exitNote == "" && m.applied != "" {
-			m.exitNote = fmt.Sprintf("%s was only previewed; %s is still applied", m.cur.Name, m.applied)
-		}
-	}
+	m.endInterfacePreview()
 	_ = m.state.Save()
 	m.quitting = true
+	var reload tea.Cmd
+	if len(written) > 0 {
+		// Only a file that changed is worth a keystroke into Ghostty.
+		reload = m.reload()
+	}
+	return tea.Sequence(reload, tea.Raw(unwatchScheme), m.dropPictures(), tea.Quit)
+}
+
+// RestoreColours puts the terminal's colours back to what its configuration
+// says when anything was painted into it this session, whichever way the
+// editor ends: main calls it as well when the program is interrupted, killed
+// or panics. Where Ghostty is not re-reading its files, the window still
+// knows its old theme, so a theme applied here is shown again on top. It is
+// safe to call more than once.
+func (m *Model) RestoreColours() {
+	if !m.painted {
+		return
+	}
+	m.painted = false
+	m.live.Reset()
+	m.applyLive.Reset()
+	if m.caps.inGhostty && m.appliedHere && !m.autoReloadWorks() {
+		if t, ok := m.lib.Get(m.applied); ok {
+			live := m.applyLive
+			if live == nil {
+				live = m.live
+			}
+			live.Show(t.Colors)
+		}
+	}
 	m.live.Close()
-	return tea.Sequence(m.reload(), tea.Raw(unwatchScheme), m.dropPictures(), tea.Quit)
+	m.applyLive.Close()
+	m.live, m.applyLive = nil, nil
 }
 
 // abandon leaves without writing anything and puts the terminal's colours
 // back to what its configuration says.
 func (m *Model) abandon() (tea.Model, tea.Cmd) {
-	m.live.Reset()
-	m.live.Close()
+	m.exitNote = "Left without writing anything"
+	// A shader waiting for "keep it?" was written already: put it back and
+	// say so, rather than leave it behind a note that nothing was written.
+	unkept, dropped := m.dropUnkeptShader()
+	if dropped {
+		m.exitNote = "Left; the shader that was not kept is put back, nothing else was written"
+	}
+	m.RestoreColours()
+	m.endInterfacePreview()
 	_ = m.state.Save()
 	m.quitting = true
-	m.exitNote = "Left without writing anything"
-	return m, tea.Sequence(tea.Raw(unwatchScheme), m.dropPictures(), tea.Quit)
+	return m, tea.Sequence(unkept, tea.Raw(unwatchScheme), m.dropPictures(), tea.Quit)
 }

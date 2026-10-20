@@ -46,6 +46,16 @@ func (m *Model) adjustSelected(dir int) (tea.Cmd, bool) {
 	next := cur + dir
 	if cur < 0 {
 		next = 0
+		if s := o.cmd.set; s != nil && s.numeric {
+			// Between two steps, or off the scale: the arrow goes to the
+			// nearest step its way, never back to the bottom of the scale.
+			now, ok := parseNumber(s.get(m))
+			if !ok {
+				m.warn("%s is set to %s here, which is not a number the arrows can step: type %s <value>", s.label, s.get(m), s.cmd)
+				return nil, true
+			}
+			next = nearestStep(opts, now, dir)
+		}
 	}
 	if next < 0 || next >= len(opts) {
 		// The end of the scale: nothing further that way.
@@ -54,6 +64,25 @@ func (m *Model) adjustSelected(dir int) (tea.Cmd, bool) {
 	cmd := o.cmd.run(m, "", &opts[next])
 	m.recompute()
 	return cmd, true
+}
+
+// nearestStep is the index of the first option above now, going up, or the
+// last one below it, going down; -1 or len(opts) when there is none that way.
+func nearestStep(opts []option, now float64, dir int) int {
+	if dir > 0 {
+		for i, o := range opts {
+			if v, ok := parseNumber(o.value); ok && v > now {
+				return i
+			}
+		}
+		return len(opts)
+	}
+	for i := len(opts) - 1; i >= 0; i-- {
+		if v, ok := parseNumber(opts[i].value); ok && v < now {
+			return i
+		}
+	}
+	return -1
 }
 
 // resetSelected puts the highlighted setting of the menu back to its

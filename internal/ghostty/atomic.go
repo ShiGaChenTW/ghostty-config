@@ -1,7 +1,9 @@
 package ghostty
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sync"
@@ -16,23 +18,50 @@ var (
 )
 
 // backup copies a file's original content into the state directory before its
-// first rewrite of the session.
-func backup(stateDir, path string, original []byte) error {
+// first rewrite of the session. fresh asks for a new copy even when one was
+// taken already: the file changed under us, and that version is the user's
+// too.
+func backup(stateDir, path string, original []byte, fresh bool) error {
 	backedUpMu.Lock()
 	defer backedUpMu.Unlock()
-	if backedUp[path] {
+	if backedUp[path] && !fresh {
 		return nil
 	}
 	dir := filepath.Join(stateDir, "backups")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("could not create the backup directory: %w", err)
 	}
-	name := fmt.Sprintf("%s.%s", filepath.Base(path), time.Now().Format("20060102-150405"))
-	if err := os.WriteFile(filepath.Join(dir, name), original, 0o644); err != nil {
+	stamp := time.Now().Format("20060102-150405")
+	if _, err := writeBackup(dir, filepath.Base(path), stamp, original); err != nil {
 		return fmt.Errorf("could not back up %s: %w", path, err)
 	}
 	backedUp[path] = true
 	return nil
+}
+
+// writeBackup creates base.stamp in dir, or base.stamp-2, -3 and so on when
+// that name is taken. On macOS the XDG and Application Support roots are both
+// called `config`, and a backup must never overwrite another one.
+func writeBackup(dir, base, stamp string, data []byte) (string, error) {
+	for n := 1; ; n++ {
+		name := fmt.Sprintf("%s.%s", base, stamp)
+		if n > 1 {
+			name = fmt.Sprintf("%s-%d", name, n)
+		}
+		target := filepath.Join(dir, name)
+		f, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+		if errors.Is(err, fs.ErrExist) {
+			continue
+		}
+		if err != nil {
+			return "", err
+		}
+		if _, err := f.Write(data); err != nil {
+			f.Close()
+			return "", err
+		}
+		return target, f.Close()
+	}
 }
 
 // BackupNow copies every existing root config into the backups directory,
@@ -49,8 +78,8 @@ func BackupNow(paths Paths) ([]string, error) {
 		if err != nil {
 			continue
 		}
-		target := filepath.Join(dir, fmt.Sprintf("%s.%s", filepath.Base(root), stamp))
-		if err := os.WriteFile(target, data, 0o644); err != nil {
+		target, err := writeBackup(dir, filepath.Base(root), stamp, data)
+		if err != nil {
 			return out, err
 		}
 		out = append(out, target)
@@ -58,10 +87,37 @@ func BackupNow(paths Paths) ([]string, error) {
 	return out, nil
 }
 
+// resolveLink follows path to the file it finally names, even when that file
+// does not exist yet. A config kept in a dotfiles repository and linked into
+// place must stay a link: the rewrite goes to the target, not over the link.
+func resolveLink(path string) string {
+	for i := 0; i < 40; i++ {
+		info, err := os.Lstat(path)
+		if err != nil || info.Mode()&os.ModeSymlink == 0 {
+			return path
+		}
+		target, err := os.Readlink(path)
+		if err != nil {
+			return path
+		}
+		if !filepath.IsAbs(target) {
+			target = filepath.Join(filepath.Dir(path), target)
+		}
+		path = target
+	}
+	return path
+}
+
 // writeFileAtomic replaces path in one step: written to a temporary file in
 // the same directory, flushed, then renamed over the target. A crash or a
-// concurrent reader can never observe a half-written config.
+// concurrent reader can never observe a half-written config. A symlink is
+// followed and its target replaced; an existing file keeps its permissions,
+// and perm applies only to a file created here.
 func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
+	path = resolveLink(path)
+	if info, err := os.Stat(path); err == nil {
+		perm = info.Mode().Perm()
+	}
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("could not create %s: %w", dir, err)

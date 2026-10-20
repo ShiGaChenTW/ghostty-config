@@ -14,6 +14,9 @@ func TestParseHexForms(t *testing.T) {
 	if _, err := ParseHex("#12345"); err == nil {
 		t.Error("five digits must fail")
 	}
+	if c, err := ParseHex("#1a2B3c"); err != nil || c != (RGB{0x1a, 0x2b, 0x3c}) {
+		t.Errorf("#1a2B3c = %v, %v", c, err)
+	}
 	if Normalize("#ABCDEF", "") != "#abcdef" {
 		t.Error("normalize should lower-case")
 	}
@@ -157,7 +160,7 @@ func TestIsDark(t *testing.T) {
 
 func TestIsHex(t *testing.T) {
 	valid := []string{"#000000", "fff", "#abc123", "ABCDEF", "  #123  "}
-	invalid := []string{"", "#12345", "gggggg", "#", "xyz"}
+	invalid := []string{"", "#12345", "gggggg", "#", "xyz", "#-1-1-1", "#ff000g", "+1+1+1", "#f f f ", "-1-", "0x1234"}
 	for _, s := range valid {
 		if !IsHex(s) {
 			t.Errorf("IsHex(%q) = false, want true", s)

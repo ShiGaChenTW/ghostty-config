@@ -17,7 +17,7 @@ import (
 )
 
 // version is overridden at build time with -ldflags "-X main.version=...".
-var version = "1.1.5"
+var version = "1.1.6"
 
 func main() {
 	configPath := flag.String("config", "", "Ghostty config file to edit instead of the default ones")
@@ -139,6 +139,9 @@ Keys:
 	// The alternate screen and the mouse are asked for by the view itself.
 	program := tea.NewProgram(model)
 	if _, err := program.Run(); err != nil {
+		// However it ended, a theme painted into the terminal for a try must
+		// not outlive the editor.
+		model.RestoreColours()
 		// Interrupted from outside (a signal, a kill): leave quietly, the
 		// way a shell expects, writing nothing more.
 		if errors.Is(err, tea.ErrInterrupted) || errors.Is(err, tea.ErrProgramKilled) {
