@@ -26,6 +26,9 @@ import (
 // written in these units and scales with the terminal's font.
 const pixUnit = 22
 
+// pixText is how much larger than the layout's own sizes the text is drawn.
+const pixText = 1.1
+
 type pixEngine struct {
 	cw, ch  int // a cell in device pixels, exactly
 	viaFile bool
@@ -106,6 +109,7 @@ func (m *Model) renderPixel() string {
 	e := m.px
 	W, H := m.width*e.cw, m.height*e.ch
 	c := pix.New(W, H, float32(e.ch)/pixUnit)
+	c.TextScale = pixText
 	m.drawScreen(c)
 
 	ui := m.panelChrome()

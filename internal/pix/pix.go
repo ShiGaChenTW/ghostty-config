@@ -21,16 +21,18 @@ import (
 
 // Canvas is an RGBA picture drawn in logical units.
 type Canvas struct {
-	Img  *image.RGBA
-	S    float32
-	clip image.Rectangle
-	ras  vector.Rasterizer
+	Img *image.RGBA
+	S   float32
+	// TextScale enlarges every face handed out, leaving the layout alone.
+	TextScale float32
+	clip      image.Rectangle
+	ras       vector.Rasterizer
 }
 
 // New makes a canvas of w by h device pixels.
 func New(w, h int, s float32) *Canvas {
 	img := image.NewRGBA(image.Rect(0, 0, w, h))
-	return &Canvas{Img: img, S: s, clip: img.Bounds()}
+	return &Canvas{Img: img, S: s, TextScale: 1, clip: img.Bounds()}
 }
 
 // W and H are the size in logical units.
@@ -157,7 +159,7 @@ func (c *Canvas) Shadow(x, y, w, h, r, spread, dy float32, alpha float64) {
 
 // Face is a face of the embedded fonts at a logical size.
 func (c *Canvas) Face(mono, bold bool, px float32) font.Face {
-	return kimg.Face(mono, bold, float64(px*c.S))
+	return kimg.Face(mono, bold, float64(px*c.S*c.TextScale))
 }
 
 // substitutes stand in for symbols no embedded font draws.

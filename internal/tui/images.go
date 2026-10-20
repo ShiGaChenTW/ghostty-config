@@ -36,7 +36,11 @@ type imageStore struct {
 }
 
 func newImageStore(out io.Writer) *imageStore {
-	return &imageStore{ids: map[string]uint32{}, used: map[string]int{}, next: 0x000100, out: out}
+	// Each run numbers its pictures from a point of its own. A terminal keeps
+	// what an earlier run left on the alternate screen, and a picture sent
+	// under a number still in use there would be drawn over the old one.
+	base := uint32(0x010000 + randInt(0xD00000))
+	return &imageStore{ids: map[string]uint32{}, used: map[string]int{}, next: base, out: out}
 }
 
 // maxImages bounds what the terminal holds: past it the oldest are freed.
@@ -119,12 +123,35 @@ func (s *imageStore) flush() {
 
 // reset forgets everything and frees it in the terminal.
 func (s *imageStore) reset() {
-	s.ids = map[string]uint32{}
-	s.used = map[string]int{}
+	drop := s.dropAll()
 	s.queue.Reset()
 	if s.out != nil {
-		_, _ = io.WriteString(s.out, kimg.DeleteAll())
+		_, _ = io.WriteString(s.out, drop)
 	}
+}
+
+// dropAll forgets every picture and returns what frees each one in the
+// terminal, its placements with it. Deleting by number reaches the pictures
+// shown through placeholders, which a plain "delete everything visible" may
+// leave behind.
+func (s *imageStore) dropAll() string {
+	var b strings.Builder
+	for _, id := range s.ids {
+		b.WriteString(kimg.Delete(id))
+	}
+	b.WriteString(kimg.DeleteAll())
+	s.ids = map[string]uint32{}
+	s.used = map[string]int{}
+	return b.String()
+}
+
+// dropPictures frees every picture while the alternate screen that holds
+// them is still up: on the way out.
+func (m *Model) dropPictures() tea.Cmd {
+	if m.imgs == nil {
+		return nil
+	}
+	return tea.Raw(m.imgs.dropAll())
 }
 
 // supportsImages reads the environment: Ghostty and Kitty draw Unicode

@@ -4,6 +4,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -16,7 +17,7 @@ import (
 )
 
 // version is overridden at build time with -ldflags "-X main.version=...".
-var version = "1.1.2"
+var version = "1.1.3"
 
 func main() {
 	configPath := flag.String("config", "", "Ghostty config file to edit instead of the default ones")
@@ -138,6 +139,12 @@ Keys:
 	// The alternate screen and the mouse are asked for by the view itself.
 	program := tea.NewProgram(model)
 	if _, err := program.Run(); err != nil {
+		// Interrupted from outside (a signal, a kill): leave quietly, the
+		// way a shell expects, writing nothing more.
+		if errors.Is(err, tea.ErrInterrupted) || errors.Is(err, tea.ErrProgramKilled) {
+			fmt.Print("\x1b_Ga=d,d=A,q=2\x1b\\")
+			os.Exit(130)
+		}
 		fail("%v", err)
 	}
 	if !*noImages && (*forceImages || tui.ImagesSupported()) {

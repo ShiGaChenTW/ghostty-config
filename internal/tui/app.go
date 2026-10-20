@@ -642,7 +642,7 @@ func (m *Model) leave() tea.Cmd {
 	_ = m.state.Save()
 	m.quitting = true
 	m.live.Close()
-	return tea.Sequence(m.reload(), tea.Raw(unwatchScheme), tea.Quit)
+	return tea.Sequence(m.reload(), tea.Raw(unwatchScheme), m.dropPictures(), tea.Quit)
 }
 
 // abandon leaves without writing anything and puts the terminal's colours
@@ -653,5 +653,5 @@ func (m *Model) abandon() (tea.Model, tea.Cmd) {
 	_ = m.state.Save()
 	m.quitting = true
 	m.exitNote = "Left without writing anything"
-	return m, tea.Sequence(tea.Raw(unwatchScheme), tea.Quit)
+	return m, tea.Sequence(tea.Raw(unwatchScheme), m.dropPictures(), tea.Quit)
 }

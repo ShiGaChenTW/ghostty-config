@@ -3,6 +3,7 @@ package tui
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"image/png"
 	"io"
 	"os"
@@ -44,6 +45,7 @@ func (h *harness) shot(name string) {
 	}
 	m.regions = m.regions[:0]
 	c := pix.New(m.width*m.px.cw, m.height*m.px.ch, float32(m.px.ch)/pixUnit)
+	c.TextScale = pixText
 	m.drawScreen(c)
 	var b bytes.Buffer
 	_ = png.Encode(&b, c.Img)
@@ -308,5 +310,37 @@ func TestCellSizeComesFromTheTerminal(t *testing.T) {
 	h.m.View()
 	if !strings.Contains(out.String(), "s="+itoa(118*19)+",v=42") {
 		t.Fatal("the rows were not drawn again at the new cell size")
+	}
+}
+
+// Leaving frees every picture by its number, while the screen that holds
+// them is up, and two runs never number their pictures alike.
+func TestPicturesAreFreedOnTheWayOut(t *testing.T) {
+	var out bytes.Buffer
+	h := newHarnessWith(t, pixConfig, Options{NoReload: true, Images: true, ImgOut: &out, Pixel: true, PixCell: [2]int{17, 38}})
+	h.m.View()
+	var ids []uint32
+	for _, id := range h.m.imgs.ids {
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		t.Fatal("no picture was sent")
+	}
+	cmd := h.m.dropPictures()
+	if cmd == nil {
+		t.Fatal("nothing frees the pictures")
+	}
+	raw, ok := cmd().(tea.RawMsg)
+	if !ok {
+		t.Fatalf("freeing the pictures is %T", cmd())
+	}
+	for _, id := range ids {
+		if !strings.Contains(fmt.Sprint(raw.Msg), "d=I,i="+itoa(int(id))+",") {
+			t.Fatalf("picture %d is not freed by number", id)
+		}
+	}
+	other := newImageStore(nil)
+	if other.next == newImageStore(nil).next && other.next == h.m.imgs.next {
+		t.Fatal("runs number their pictures alike")
 	}
 }
