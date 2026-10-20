@@ -1,6 +1,9 @@
 package color
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestParseHexForms(t *testing.T) {
 	for _, in := range []string{"#AABBCC", "aabbcc", "#abc", "ABC"} {
@@ -93,4 +96,154 @@ func TestAdjustSteps(t *testing.T) {
 	if h := c.ToHSL().H; h < 7 || h > 9 {
 		t.Errorf("hue step = %v", h)
 	}
+}
+
+func TestNormalizeHue(t *testing.T) {
+	cases := []struct {
+		in, want float64
+	}{
+		{0, 0}, {360, 0}, {-360, 0}, {180, 180},
+		{720, 0}, {-90, 270}, {450, 90}, {-450, 270},
+	}
+	for _, c := range cases {
+		if got := NormalizeHue(c.in); got != c.want {
+			t.Errorf("NormalizeHue(%v) = %v, want %v", c.in, got, c.want)
+		}
+	}
+}
+
+func TestHueDistance(t *testing.T) {
+	cases := []struct {
+		a, b, want float64
+	}{
+		{0, 0, 0}, {0, 180, 180}, {0, 360, 0},
+		{10, 350, 20}, {0, 90, 90}, {180, 170, 10},
+		{0, 181, 179}, {359, 1, 2},
+	}
+	for _, c := range cases {
+		if got := HueDistance(c.a, c.b); got != c.want {
+			t.Errorf("HueDistance(%v, %v) = %v, want %v", c.a, c.b, got, c.want)
+		}
+	}
+}
+
+func TestGrade(t *testing.T) {
+	cases := []struct {
+		ratio float64
+		want  string
+	}{
+		{21, "AAA"}, {7.0, "AAA"}, {6.9, "AA"},
+		{4.5, "AA"}, {4.49, "AA+"}, {3.0, "AA+"},
+		{2.9, "low"}, {1, "low"},
+	}
+	for _, c := range cases {
+		if got := Grade(c.ratio); got != c.want {
+			t.Errorf("Grade(%v) = %q, want %q", c.ratio, got, c.want)
+		}
+	}
+}
+
+func TestIsDark(t *testing.T) {
+	cases := map[string]bool{
+		"#000000": true, "#ffffff": false, "#282c34": true,
+		"#cdd6f4": false, "#808080": true, "garbage": true,
+	}
+	for hex, want := range cases {
+		if got := IsDark(hex); got != want {
+			t.Errorf("IsDark(%q) = %v, want %v", hex, got, want)
+		}
+	}
+}
+
+func TestIsHex(t *testing.T) {
+	valid := []string{"#000000", "fff", "#abc123", "ABCDEF", "  #123  "}
+	invalid := []string{"", "#12345", "gggggg", "#", "xyz"}
+	for _, s := range valid {
+		if !IsHex(s) {
+			t.Errorf("IsHex(%q) = false, want true", s)
+		}
+	}
+	for _, s := range invalid {
+		if IsHex(s) {
+			t.Errorf("IsHex(%q) = true, want false", s)
+		}
+	}
+}
+
+func TestBlend(t *testing.T) {
+	cases := []struct {
+		a, b  string
+		ratio float64
+		want  string
+	}{
+		{"#000000", "#ffffff", 0.0, "#000000"},
+		{"#000000", "#ffffff", 1.0, "#ffffff"},
+		{"#000000", "#ffffff", 0.5, "#808080"},
+		{"#ff0000", "#00ff00", 0.5, "#808000"},
+		{"#ff0000", "#0000ff", 0.25, "#bf0040"},
+		{"garbage", "#ffffff", 0.5, "garbage"},
+	}
+	for _, c := range cases {
+		if got := Blend(c.a, c.b, c.ratio); got != c.want {
+			t.Errorf("Blend(%q, %q, %v) = %q, want %q", c.a, c.b, c.ratio, got, c.want)
+		}
+	}
+}
+
+func TestEnsureReadable(t *testing.T) {
+	t.Run("already readable", func(t *testing.T) {
+		if got := EnsureReadable("#ffffff", "#000000"); got != "#ffffff" {
+			t.Fatalf("got %q, want %q", got, "#ffffff")
+		}
+	})
+	t.Run("dark bg falls back to white", func(t *testing.T) {
+		got := EnsureReadable("#1a1a1a", "#000000")
+		if Contrast(got, "#000000") < ContrastAA {
+			t.Fatalf("%s does not reach AA", got)
+		}
+	})
+	t.Run("light bg falls back to black", func(t *testing.T) {
+		got := EnsureReadable("#e5e5e5", "#ffffff")
+		if Contrast(got, "#ffffff") < ContrastAA {
+			t.Fatalf("%s does not reach AA", got)
+		}
+	})
+}
+
+func TestHSLHex(t *testing.T) {
+	cases := []struct {
+		h, s, l float64
+		want    string
+	}{
+		{0, 0, 0, "#000000"},
+		{0, 1, 0.5, "#ff0000"},
+		{120, 1, 0.5, "#00ff00"},
+		{240, 1, 0.5, "#0000ff"},
+		{0, 0, 1, "#ffffff"},
+	}
+	for _, c := range cases {
+		if got := HSLHex(c.h, c.s, c.l); got != c.want {
+			t.Errorf("HSLHex(%v, %v, %v) = %q, want %q", c.h, c.s, c.l, got, c.want)
+		}
+	}
+}
+
+func TestDescribe(t *testing.T) {
+	t.Run("without contrast", func(t *testing.T) {
+		got := Describe("#ff0000", "#000000", false)
+		if !strings.Contains(got, "#ff0000") || !strings.Contains(got, "rgb(255,0,0)") {
+			t.Fatalf("got %q", got)
+		}
+	})
+	t.Run("with contrast", func(t *testing.T) {
+		got := Describe("#ff0000", "#000000", true)
+		if !strings.Contains(got, "AA") {
+			t.Fatalf("red on black should grade at least AA, got %q", got)
+		}
+	})
+	t.Run("invalid hex", func(t *testing.T) {
+		if got := Describe("garbage", "#000000", false); got != "garbage" {
+			t.Fatalf("got %q", got)
+		}
+	})
 }
