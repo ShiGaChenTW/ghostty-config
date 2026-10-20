@@ -1,9 +1,12 @@
 package tui
 
 import (
+	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+
+	"github.com/vitruves/ghostty-config/internal/color"
 )
 
 // Everything on screen that answers to a click registers a region while it
@@ -20,6 +23,7 @@ const (
 	hitPreview
 	hitButton
 	hitRail
+	hitValue // a value of a setting's control: name is the value, or "slider"
 )
 
 type region struct {
@@ -154,8 +158,38 @@ func (m *Model) updateMouse(raw tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case hitButton:
 		return m.pressButton(r.name)
+	case hitValue:
+		return m.clickValue(r, msg.X)
 	}
 	return m, nil
+}
+
+// clickValue sets a setting from its control: a pill, a switch, or a point
+// along a slider.
+func (m *Model) clickValue(r region, x int) (tea.Model, tea.Cmd) {
+	if r.index < 0 || r.index >= len(m.results) {
+		return m, nil
+	}
+	m.sel.cursor = r.index
+	m.browsed = true
+	move := m.afterMove()
+	o := m.results[r.index]
+	if o.cmd == nil || o.cmd.set == nil {
+		return m, move
+	}
+	s := o.cmd.set
+	v := r.name
+	if v == "slider" {
+		// The first cell of the track is the minimum, the last the maximum.
+		frac := float64(x-r.x) / float64(maxInt(r.w-1, 1))
+		v = s.format(roundStep(color.Clamp(s.min+frac*(s.max-s.min), s.min, s.max), s.step))
+	}
+	if strings.EqualFold(v, s.get(m)) {
+		return m, move
+	}
+	cmd := o.cmd.run(m, "", &option{value: v})
+	m.recompute()
+	return m, tea.Batch(move, cmd)
 }
 
 // pressButton runs a dialog button.
@@ -172,6 +206,10 @@ func (m *Model) pressButton(name string) (tea.Model, tea.Cmd) {
 			return m, m.confirmNo(m)
 		}
 	case "close":
+		m.overlay = overlayNone
+	case "update-install":
+		return m, m.startUpdate()
+	case "update-later":
 		m.overlay = overlayNone
 	case "enter":
 		// The footer's button does what Enter does.

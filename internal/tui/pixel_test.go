@@ -2,6 +2,7 @@ package tui
 
 import (
 	"bytes"
+	"context"
 	"image/png"
 	"io"
 	"os"
@@ -165,4 +166,123 @@ func TestReadmeShots(t *testing.T) {
 		h.m.setPromptText("Theme ")
 		h.highlightTheme("sakura-fade")
 	})
+}
+
+// The renderer clears the whole screen after a resize, and the terminal
+// drops every picture with it: after a resize, every row must be sent again,
+// even one whose pixels did not change.
+func TestPicturesAreSentAgainAfterAResize(t *testing.T) {
+	var out bytes.Buffer
+	h := newHarnessWith(t, pixConfig, Options{NoReload: true, Images: true, ImgOut: &out, Pixel: true, PixCell: [2]int{17, 38}})
+	h.m.View()
+	first := strings.Count(out.String(), "a=T")
+	if first == 0 {
+		t.Fatal("the first frame sent no picture")
+	}
+	out.Reset()
+	h.m.View()
+	if strings.Contains(out.String(), "a=T") {
+		t.Fatal("an unchanged frame sent its pictures again")
+	}
+	h.send(tea.WindowSizeMsg{Width: 130, Height: 38})
+	h.m.View()
+	if n := strings.Count(out.String(), "a=T"); n != first {
+		t.Fatalf("after a resize %d pictures were sent, want all %d of the frame", n, first)
+	}
+}
+
+// The controls of a setting answer to the mouse: a pill picks its value, a
+// switch flips, a point along a slider sets the value under it.
+func TestSettingControlsAreClickable(t *testing.T) {
+	h := newPixHarness(t, "midnight")
+	h.m.jumpToGroup("Window")
+
+	pill, ok := h.find(hitValue, -1, "dark")
+	if !ok {
+		t.Fatal("no pill for a dark window theme")
+	}
+	h.click(pill.x+pill.w/2, pill.y)
+	if !strings.Contains(h.config(), "window-theme = dark") {
+		t.Fatalf("clicking the pill did not set it:\n%s", h.config())
+	}
+
+	toggle, ok := h.find(hitValue, -1, "on")
+	if !ok {
+		t.Fatal("no switch to turn on")
+	}
+	h.click(toggle.x+toggle.w/2, toggle.y)
+	if o := h.m.results[toggle.index]; o.cmd.set.get(h.m) != "on" {
+		t.Fatalf("clicking the switch of %s left it %s", o.cmd.set.key, o.cmd.set.get(h.m))
+	}
+
+	for _, r := range h.m.regions {
+		if r.kind == hitValue && r.name == "slider" && h.m.results[r.index].cmd.name == "paddingx" {
+			h.click(r.x, r.y)
+			if !strings.Contains(h.config(), "window-padding-x = 0") {
+				t.Fatalf("clicking the start of the slider did not set 0:\n%s", h.config())
+			}
+			h.click(r.x+r.w-1, r.y)
+			if !strings.Contains(h.config(), "window-padding-x = 60") {
+				t.Fatalf("clicking the end of the slider did not set 60:\n%s", h.config())
+			}
+			return
+		}
+	}
+	t.Fatal("no slider for the left and right padding")
+}
+
+// A newer release opens a dialog: Next time closes it, Install replaces the
+// binary through the installer and says so.
+func TestUpdateDialog(t *testing.T) {
+	h := newPixHarness(t, "midnight")
+	h.m.opts.Version = "1.0.0"
+	var asked string
+	old := installRelease
+	installRelease = func(_ context.Context, v string) (string, error) {
+		asked = v
+		return "/usr/local/bin/ghostty-config", nil
+	}
+	defer func() { installRelease = old }()
+
+	h.send(updateMsg{latest: "1.0.0"})
+	if h.m.overlay == overlayUpdate {
+		t.Fatal("the same version offered itself as an update")
+	}
+	h.send(updateMsg{latest: "1.2.0"})
+	if h.m.overlay != overlayUpdate {
+		t.Fatal("a newer release opened no dialog")
+	}
+	h.shot("16-update")
+	if _, ok := h.find(hitButton, -1, "update-install"); !ok {
+		t.Fatal("the dialog has no Install button")
+	}
+	h.key("esc")
+	if h.m.overlay != overlayNone || asked != "" {
+		t.Fatalf("Next time left overlay %d, installed %q", h.m.overlay, asked)
+	}
+
+	h.send(updateMsg{latest: "1.2.0"})
+	h.key("enter")
+	if asked != "1.2.0" {
+		t.Fatalf("Install asked for %q, want 1.2.0", asked)
+	}
+	if h.m.overlay != overlayMessage || !strings.Contains(h.m.messageText, "Updated to 1.2.0") {
+		t.Fatalf("after Install: overlay %d, %q", h.m.overlay, h.m.messageText)
+	}
+	if !strings.Contains(h.m.ExitNote(), "1.2.0") {
+		t.Fatalf("the exit note does not say the new version: %q", h.m.ExitNote())
+	}
+
+	// Held back while the welcome is open, shown when it closes.
+	w := newPixHarness(t, "midnight")
+	w.m.opts.Version = "1.0.0"
+	w.m.overlay = overlayWelcome
+	w.send(updateMsg{latest: "1.2.0"})
+	if w.m.overlay != overlayWelcome {
+		t.Fatal("the update dialog covered the welcome")
+	}
+	w.key("enter")
+	if w.m.overlay != overlayUpdate {
+		t.Fatal("closing the welcome did not show the update")
+	}
 }

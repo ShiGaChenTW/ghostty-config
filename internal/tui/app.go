@@ -28,6 +28,7 @@ const (
 	overlayConfirm
 	overlayBusy
 	overlayMessage
+	overlayUpdate
 )
 
 // writeDebounce is how long the highlight must rest before a font or a
@@ -170,7 +171,11 @@ type Model struct {
 	top        int
 	exitNote   string
 	updateNote string // a newer release, told again on the way out
-	quitting   bool
+	// updateLatest is the newer release on offer; updatePending holds its
+	// dialog back while another one is open.
+	updateLatest  string
+	updatePending bool
+	quitting      bool
 }
 
 // New builds the editor over loaded configuration.
@@ -296,22 +301,25 @@ type (
 		cached bool
 		err    error
 	}
+	updateInstalledMsg struct {
+		version, path string
+		err           error
+	}
 )
 
 // Update dispatches to the overlay or the prompt.
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		first := m.width == 0
 		m.width, m.height = msg.Width, msg.Height
 		m.top = 0
 		if m.opts.Images {
 			m.refreshCell()
 		}
-		if first {
-			return m, m.armImages()
-		}
-		return m, nil
+		// The renderer clears the whole screen after every resize, and the
+		// terminal drops every picture with it: send them all again once it
+		// has.
+		return m, m.armImages()
 	case imgReadyMsg:
 		if msg.seq == m.imgSeq && m.imgs != nil {
 			// Whatever was sent before went to the other screen: send it all
@@ -378,13 +386,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if update.Newer(msg.latest, m.opts.Version) {
 			m.updateNote = fmt.Sprintf("ghostty-config %s is available (you have %s): %s", msg.latest, m.opts.Version, update.InstallHint)
-			// Only take a line that is showing the selection, never a
-			// message the user may still be reading.
-			if m.statusKind == statusPlain {
-				m.info("ghostty-config %s is available — details on exit", msg.latest)
-			}
+			m.offerUpdate(msg.latest)
 		}
 		return m, nil
+	case updateInstalledMsg:
+		return m, m.finishUpdate(msg)
 	case collectionMsg:
 		m.overlay = overlayNone
 		if msg.err != nil {

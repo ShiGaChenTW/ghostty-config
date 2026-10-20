@@ -31,6 +31,15 @@ func (m *Model) updateOverlay(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.overlay = overlayNone
 		m.state.Welcomed = true
 		_ = m.state.Save()
+		m.showPendingUpdate()
+		return m, nil
+	case overlayUpdate:
+		switch key {
+		case "enter", "y", "Y", "i", "I":
+			return m, m.startUpdate()
+		case "esc", "n", "N", "q":
+			m.overlay = overlayNone
+		}
 		return m, nil
 	case overlayHelp, overlayMessage:
 		m.overlay = overlayNone
@@ -83,6 +92,11 @@ func (m *Model) viewOverlay(body string) string {
 		lines = append([]string{""}, wrapLines(m.messageText, 70, c.base())...)
 		lines = append(lines, "", c.mutedS().Render("  any key closes"))
 		width = 76
+	case overlayUpdate:
+		title = "Update available"
+		lines = append([]string{""}, wrapLines(m.updateText(), 52, c.base())...)
+		lines = append(lines, "", c.base().Render("  ")+m.updateButtons(len(lines)+4))
+		width = 58
 	}
 	if width > m.width-2 {
 		width = m.width - 2
@@ -306,4 +320,20 @@ func welcomeFeatures() [][3]string {
 		{"Esc", "Back", "to the section's list, and from there out; leaving applies nothing"},
 		{"F1", "All keys", "and the full list of commands"},
 	}
+}
+
+// updateText is what the update dialog says.
+func (m *Model) updateText() string {
+	return fmt.Sprintf("ghostty-config %s is available. You have %s. Install downloads it, checks it and replaces this binary; the new version starts next time.", m.updateLatest, m.opts.Version)
+}
+
+// updateButtons renders Install / Next time and registers them relative to
+// the box, like the buttons of a question.
+func (m *Model) updateButtons(row int) string {
+	c := m.dialogChrome()
+	yes := " Enter  install "
+	no := " Esc  next time "
+	m.addRegion(3, row, lipgloss.Width(yes)+2, 1, hitButton, 0, "update-install")
+	m.addRegion(3+lipgloss.Width(yes)+4, row, lipgloss.Width(no)+2, 1, hitButton, 1, "update-later")
+	return m.capL(c.accent, c.paint()) + on(c.bg, c.accent).Bold(true).Render(yes) + m.capR(c.accent, c.paint()) + c.base().Render("  ") + m.capL(c.selBg, c.paint()) + on(c.selFg, c.selBg).Render(no) + m.capR(c.selBg, c.paint())
 }

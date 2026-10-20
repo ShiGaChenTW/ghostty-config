@@ -1,7 +1,8 @@
 // Package update asks GitHub whether a newer release of this tool exists.
 //
 // The check is best effort: it runs in the background, gives up quickly
-// without a network, and every failure is silent. Nothing is downloaded.
+// without a network, and every failure is silent. Install, in install.go,
+// downloads a release only when the user asks for it.
 package update
 
 import (

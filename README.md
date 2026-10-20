@@ -36,8 +36,10 @@ make build && make local-install
 
 Run `ghostty-config`. Browsing never changes anything: a theme is written when you press `Enter` on it, and a setting when you change its value.
 
+<div align="center">
+
 | Key | Action |
-| --- | --- |
+| :---: | :--- |
 | `Tab` | Next section |
 | `↑` `↓` | Move through the list |
 | `←` `→` | Change the highlighted setting |
@@ -46,6 +48,10 @@ Run `ghostty-config`. Browsing never changes anything: a theme is written when y
 | `/` or type | Search themes, settings and commands |
 | `Ctrl+T` `Ctrl+F` | Try a theme in this terminal; star it |
 | `F1` `Esc` | Help; go back, then quit |
+
+</div>
+
+Everything can also be clicked. Click a section, a family or a setting to go to it. Click a pill, a switch or a point on a slider to set its value. Double-click a theme card to apply it, and use the wheel to scroll.
 
 <p align="center">
   <img src="img/window.png" alt="Window settings in a light terminal" width="820">
@@ -65,7 +71,7 @@ Run `ghostty-config`. Browsing never changes anything: a theme is written when y
 - **Display.** In Ghostty and Kitty, the whole interface is drawn as images through the Kitty graphics protocol. Only the rows that change are redrawn, which takes a millisecond or two. Anywhere else, and inside tmux or screen, it is drawn with plain terminal text.
 - **Your files.** Each setting is rewritten on the line where it is defined, and comments are kept. Every file is backed up to `~/.config/ghostty-config/backups/` before its first change.
 - **Reload.** On macOS the tool sends Ghostty its reload shortcut, which needs the Accessibility permission. Elsewhere, reload Ghostty yourself.
-- **Network.** Used only for downloads you ask for, and at most once a day to check for a new release.
+- **Updates.** At most once a day the tool checks GitHub for a new release. When there is one, a dialog offers to install it: **Install** downloads the binary for your system, checks its checksum and replaces the current one, and **Next time** leaves things as they are. The network is used for nothing else, apart from downloads you ask for. `-no-update-check` turns the check off.
 
 ## Options
 

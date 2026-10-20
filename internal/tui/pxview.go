@@ -707,8 +707,9 @@ func (m *Model) pxMenu(c *pix.Canvas, p pxPal, f pxFonts, g pxGeo) {
 		if y < g.bodyY-0.5 || y+rowH > g.viewEnd+0.5 {
 			continue
 		}
-		m.pxMenuRow(c, p, f, o, i == m.sel.cursor, g.bodyX, y, listW)
+		// The row first, so the control's own regions lie on top of it.
 		m.pxRegion(c, g.bodyX, y, listW, rowH, hitResult, i, "")
+		m.pxMenuRow(c, p, f, o, i, i == m.sel.cursor, g.bodyX, y, listW)
 	}
 	c.Unclip()
 
@@ -772,7 +773,7 @@ func (m *Model) pxScrollList(spots []menuSpot, total float32, g pxGeo) {
 
 // pxMenuRow is a line of the menu: a mark when the setting is changed, its
 // name, and on the right the control that shows its value.
-func (m *Model) pxMenuRow(c *pix.Canvas, p pxPal, f pxFonts, o option, sel bool, x, y, w float32) {
+func (m *Model) pxMenuRow(c *pix.Canvas, p pxPal, f pxFonts, o option, idx int, sel bool, x, y, w float32) {
 	if sel {
 		c.Rect(x, y, w, rowH, 8, p.rowSel)
 	}
@@ -822,14 +823,14 @@ func (m *Model) pxMenuRow(c *pix.Canvas, p pxPal, f pxFonts, o option, sel bool,
 	}
 
 	v := s.get(m)
-	ctrlLeft := m.pxControl(c, p, f, s, v, right, y, x+14+labelW+24)
+	ctrlLeft := m.pxControl(c, p, f, s, v, idx, right, y, x+14+labelW+24)
 	c.Text(face, x+14, base, c.Fit(face, label, ctrlLeft-(x+14)-16), col)
 }
 
 // pxControl draws the control of a setting with its right edge at right and
 // returns where it starts. A number is a slider, on and off a switch, a few
 // words a row of pills, more words the value between arrows.
-func (m *Model) pxControl(c *pix.Canvas, p pxPal, f pxFonts, s *setting, v string, right, y, minLeft float32) float32 {
+func (m *Model) pxControl(c *pix.Canvas, p pxPal, f pxFonts, s *setting, v string, idx int, right, y, minLeft float32) float32 {
 	cy := y + rowH/2
 	switch {
 	case s.numeric:
@@ -848,6 +849,7 @@ func (m *Model) pxControl(c *pix.Canvas, p pxPal, f pxFonts, s *setting, v strin
 		kx := tx + (tw-14)*frac
 		c.Circle(kx+7, cy+0.5, 8, stdcolor.NRGBA{0, 0, 0, 64})
 		c.Circle(kx+7, cy, 7, pix.Hex("#f6f7f9", 1))
+		m.pxRegion(c, tx, y, tw, rowH, hitValue, idx, "slider")
 		return tx
 
 	case len(s.options) == 2 && s.options[0] == "on" && s.options[1] == "off":
@@ -862,6 +864,11 @@ func (m *Model) pxControl(c *pix.Canvas, p pxPal, f pxFonts, s *setting, v strin
 		c.Rect(tx, cy-10, 34, 20, 10, bg)
 		c.Circle(kx+8, cy+0.4, 8.4, stdcolor.NRGBA{0, 0, 0, 40})
 		c.Circle(kx+8, cy, 8, pix.Hex("#f6f7f9", 1))
+		other := "on"
+		if on {
+			other = "off"
+		}
+		m.pxRegion(c, tx-4, y, 42, rowH, hitValue, idx, other)
 		return tx
 	}
 
@@ -882,6 +889,7 @@ func (m *Model) pxControl(c *pix.Canvas, p pxPal, f pxFonts, s *setting, v strin
 			} else {
 				c.Text(f.small, x+(widths[i]-c.Width(f.small, label))/2, mid(cy-12, 24, 12.5), label, p.muted)
 			}
+			m.pxRegion(c, x, y, widths[i], rowH, hitValue, idx, o)
 			x += widths[i] + 2
 		}
 		return right - total
@@ -1402,6 +1410,35 @@ func (m *Model) pxOverlay(c *pix.Canvas, p pxPal, f pxFonts, g pxGeo) {
 		c.Text(f.small, x+28, y+h-22, "Any key closes", p.muted)
 	case overlayHelp:
 		m.pxHelp(c, p, f, g, card)
+	case overlayUpdate:
+		w := minF(540, g.W-40)
+		lines := c.Wrap(f.body, "Install downloads it for this system, checks it against the release checksums and replaces this binary. The new version starts next time.", w-56)
+		h := float32(104+len(lines)*21) + 72
+		x, y := card(w, h)
+		c.Text(f.h3, x+28, y+40, "Update available", p.fg)
+		vx := x + 28
+		vx += c.Text(f.rowB, vx, y+72, "ghostty-config "+m.updateLatest, p.fg)
+		c.Text(f.body, vx+10, y+72, "· you have "+m.opts.Version, p.muted)
+		yy := y + 104
+		for _, l := range lines {
+			c.Text(f.body, x+28, yy, l, p.text2)
+			yy += 21
+		}
+		by := y + h - 52
+		bx := x + 28
+		label := "Install"
+		iw := c.Width(f.rowB, label) + 14 + 11 + 28
+		c.Rect(bx, by, iw, 32, 8, p.accent)
+		lw := c.Text(f.rowB, bx+14, mid(by, 32, 14), label, p.onAccent)
+		pxReturn(c, bx+14+lw+8, mid(by, 32, 14)+1, p.onAccent)
+		m.pxRegion(c, bx, by, iw, 32, hitButton, 0, "update-install")
+		bx += iw + 10
+		later := "Next time"
+		nw := c.Width(f.row, later) + c.Width(f.monoS, "Esc") + 44
+		c.Rect(bx, by, nw, 32, 8, p.keycap)
+		tw := c.Text(f.row, bx+14, mid(by, 32, 14), later, p.fg)
+		c.Text(f.monoS, bx+14+tw+10, mid(by, 32, 11.5), "Esc", p.muted)
+		m.pxRegion(c, bx, by, nw, 32, hitButton, 1, "update-later")
 	}
 }
 
