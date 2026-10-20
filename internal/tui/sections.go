@@ -1,0 +1,88 @@
+package tui
+
+import "sort"
+
+// Each section of the menu is split into a few named parts, so a long list
+// reads as groups: the picture interface titles them and lists them beside
+// the settings, and the menu keeps the commands of a part together.
+
+var subsections = map[string][][2]string{
+	"Themes": {
+		{"Browse", "theme favs fav"},
+		{"Create", "new random edit undo save fork"},
+		{"Files", "delete"},
+	},
+	"Fonts": {
+		{"Family", "font style size"},
+		{"Text", "lineheight cellwidth ligatures thicken thickness faint"},
+	},
+	"Window": {
+		{"Presets", "preset"},
+		{"Title bar", "titlebar shadow decoration gtktitlebar"},
+		{"Appearance", "opacity blur windowtheme colorspace contrast opaquecells"},
+		{"Padding", "paddingx paddingy balance paddingcolor"},
+		{"Splits", "splitopacity"},
+	},
+	"Input": {
+		{"Cursor", "cursor blink cursoropacity clicktomove"},
+		{"Clipboard", "copy clearselect trimspaces pasteguard"},
+		{"Mouse", "hidemouse focusmouse scrollbar"},
+		{"Keyboard", "optionalt"},
+	},
+	"Session": {
+		{"Windows", "savestate inheritcwd stepresize quitlast tabbar confirmclose resizeoverlay"},
+		{"Scrollback", "scrollback"},
+		{"Notifications", "notify"},
+	},
+	"Extensions": {
+		{"Shaders", "shader"},
+		{"Theme packs", "pack"},
+	},
+	"Tool": {
+		{"Ghostty", "reload autoreload"},
+		{"Interface", "interface"},
+		{"Config", "overrides collection backup paths"},
+		{"Help", "help quit"},
+	},
+}
+
+// subOf is the part of its section a command belongs to, and the rank of
+// that part; commands no part names fall in one named after the section.
+func subOf(c *command) (string, int) {
+	for i, part := range subsections[c.group] {
+		for _, name := range splitWords(part[1]) {
+			if name == c.name {
+				return part[0], i
+			}
+		}
+	}
+	return c.group, len(subsections[c.group])
+}
+
+func splitWords(s string) []string {
+	var out []string
+	start := -1
+	for i, r := range s + " " {
+		if r == ' ' {
+			if start >= 0 {
+				out = append(out, s[start:i])
+			}
+			start = -1
+		} else if start < 0 {
+			start = i
+		}
+	}
+	return out
+}
+
+// orderBySub keeps the commands of each part together, parts in their order.
+func orderBySub(opts []option) {
+	sort.SliceStable(opts, func(a, b int) bool {
+		if opts[a].cmd == nil || opts[b].cmd == nil {
+			return false
+		}
+		_, ra := subOf(opts[a].cmd)
+		_, rb := subOf(opts[b].cmd)
+		return ra < rb
+	})
+}

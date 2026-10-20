@@ -1,0 +1,18 @@
+# The worker that serves install.sh and counts installs.
+#
+# Cloudflare's wrangler is an npm package; run it through npx so no other
+# program called wrangler on the PATH gets in the way:
+#
+#   npx wrangler@latest login
+#   npx wrangler@latest kv namespace create COUNTS   # paste the id below
+#   npx wrangler@latest deploy
+#
+# It answers at https://ghostty-config.<your-subdomain>.workers.dev; the
+# address in internal/update/update.go, install.sh and the README must match.
+name = "ghostty-config"
+main = "worker.js"
+compatibility_date = "2025-06-01"
+
+[[kv_namespaces]]
+binding = "COUNTS"
+id = "replace-with-the-id-wrangler-prints"

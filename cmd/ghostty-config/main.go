@@ -16,7 +16,7 @@ import (
 )
 
 // version is overridden at build time with -ldflags "-X main.version=...".
-var version = "0.1.0"
+var version = "1.0.0"
 
 func main() {
 	configPath := flag.String("config", "", "Ghostty config file to edit instead of the default ones")
@@ -24,6 +24,7 @@ func main() {
 	exportPath := flag.String("export-collection", "", "Write the curated collection to a directory and exit")
 	noReload := flag.Bool("no-reload", false, "Never ask the running Ghostty to reload")
 	noImages := flag.Bool("no-images", false, "Never draw pictures: the wall of themes is made of cells")
+	cellsOnly := flag.Bool("cells", false, "Draw the interface from cells, with pictures only for the cards, instead of as one picture")
 	forceImages := flag.Bool("images", false, "Draw pictures through the Kitty graphics protocol even where this terminal is not known to support it")
 	plain := flag.Bool("plain", false, "Use only glyphs every terminal and font can draw")
 	showVersion := flag.Bool("version", false, "Show version information")
@@ -41,6 +42,7 @@ Options:
   -themes dir            User themes directory (default ~/.config/ghostty/themes)
   -export-collection dir Write the %d curated themes to a directory and exit
   -no-reload             Never send the reload keystroke to Ghostty
+  -cells                 Draw the interface from cells, with pictures only for the cards
   -no-images             Never draw pictures: the wall of themes is made of cells
   -images                Draw pictures even where this terminal is not known to show them
   -plain                 Use only glyphs every terminal and font can draw
@@ -57,7 +59,7 @@ atomic and backed up under ~/.config/ghostty-config/backups.
 Keys:
   Tab next section       ←↓↑→ walk the wall of themes   Enter apply, or open
   type to search or run  ←→ change a setting in place    Esc back, then leave
-  Ctrl+T try a theme     F2 step aside to see the terminal    F1 all keys
+  Ctrl+T try a theme     Delete put a setting back      F2 peek   F1 all keys
 `, len(collection.Collection))
 	}
 	flag.Parse()
@@ -118,11 +120,22 @@ Keys:
 	}
 	state := ghostty.LoadState(paths)
 
-	model := tui.New(paths, tree, lib, state, tui.Options{
+	images := !*noImages && (*forceImages || tui.ImagesSupported())
+	opts := tui.Options{
 		NoReload: *noReload, Plain: *plain,
-		Images:  !*noImages && (*forceImages || tui.ImagesSupported()),
+		Images:  images,
 		Version: version, NoUpdateCheck: *noUpdateCheck,
-	})
+	}
+	// The picture interface needs the exact size of a cell, which only the
+	// terminal can tell, so it is asked before anything reads the keyboard.
+	if images && !*cellsOnly {
+		if cw, ch, padX, padY, ok := tui.ProbeCell(); ok {
+			opts.Pixel = true
+			opts.PixCell = [2]int{cw, ch}
+			opts.PixPad = [2]int{padX, padY}
+		}
+	}
+	model := tui.New(paths, tree, lib, state, opts)
 	// The alternate screen and the mouse are asked for by the view itself.
 	program := tea.NewProgram(model)
 	if _, err := program.Run(); err != nil {

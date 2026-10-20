@@ -11,6 +11,7 @@ import (
 
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/opentype"
+	"golang.org/x/image/font/sfnt"
 )
 
 //go:embed fonts/code-regular.ttf
@@ -72,5 +73,46 @@ func face(mono, bold bool, px float64) font.Face {
 		panic("kimg: face: " + err.Error())
 	}
 	faces[key] = f
+	faceInfo[f] = key
 	return f
+}
+
+// Face is a face of the embedded fonts at a size in device pixels, for
+// drawing code outside this package.
+func Face(mono, bold bool, px float64) font.Face { return face(mono, bold, px) }
+
+// faceInfo remembers what each face handed out is, so a drawer can tell
+// whether it has a glyph and which face to fall back on.
+var faceInfo = map[font.Face]faceKey{}
+
+// Covers reports whether a face made by Face has a glyph for r.
+func Covers(f font.Face, r rune) bool {
+	faceMu.Lock()
+	k, ok := faceInfo[f]
+	faceMu.Unlock()
+	if !ok {
+		return true
+	}
+	idx := 2
+	if k.mono {
+		idx = 0
+	}
+	if k.bold {
+		idx++
+	}
+	var b sfnt.Buffer
+	i, err := fonts[idx].GlyphIndex(&b, r)
+	return err == nil && i != 0
+}
+
+// MonoOf is the monospace face of the same size and weight, which has the
+// arrows the sans faces lack.
+func MonoOf(f font.Face) font.Face {
+	faceMu.Lock()
+	k, ok := faceInfo[f]
+	faceMu.Unlock()
+	if !ok {
+		return f
+	}
+	return face(true, k.bold, float64(k.px)/10)
 }

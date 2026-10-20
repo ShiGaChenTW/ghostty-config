@@ -17,8 +17,13 @@ import (
 // latestURL is the GitHub API endpoint for the newest published release.
 const latestURL = "https://api.github.com/repos/vitruves/ghostty-config/releases/latest"
 
+// InstallURL serves the install script. It is served by a small worker that
+// counts how often it is fetched, which is how installs are counted; the
+// script itself lives in the repository.
+const InstallURL = "https://ghostty-config.vitruves.workers.dev/install.sh"
+
 // InstallHint is the command that fetches the newest release.
-const InstallHint = "go install github.com/vitruves/ghostty-config/cmd/ghostty-config@latest"
+const InstallHint = "curl -fsSL " + InstallURL + " | sh"
 
 // Timeout bounds the whole request, DNS included, so an offline machine or a
 // captive portal costs a few seconds of a background goroutine and nothing else.

@@ -155,6 +155,7 @@ func (m *Model) menuOptions(filter string) []option {
 				out = append(out, o)
 			}
 		}
+		orderBySub(out)
 		return out
 	}
 	for _, c := range m.commands() {
@@ -409,6 +410,13 @@ func (m *Model) updatePrompt(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			m.switchGroup(dir)
 			return m, nil
+		}
+	case "delete":
+		// On a setting of the menu, Delete puts it back to Ghostty's default.
+		if m.prompt.Value() == "" && m.cmd == nil {
+			if cmd, ok := m.resetSelected(); ok {
+				return m, cmd
+			}
 		}
 	case "home":
 		if m.prompt.Value() == "" || m.prompt.Position() == 0 {

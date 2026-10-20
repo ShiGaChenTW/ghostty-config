@@ -47,6 +47,11 @@ type Options struct {
 	Images       bool
 	CellW, CellH float64
 	ImgOut       io.Writer
+	// Pixel draws the whole interface as pictures, which needs Images and
+	// the exact size of a cell, PixCell, in pixels; PixPad is how much the
+	// window size the terminal reports exceeds the grid.
+	Pixel           bool
+	PixCell, PixPad [2]int
 	// Version is this build's version, compared with the newest release.
 	Version string
 	// NoUpdateCheck never asks GitHub for a newer release.
@@ -118,6 +123,8 @@ type Model struct {
 	// a cell in pixels they are drawn for.
 	imgs         *imageStore
 	cellW, cellH float64
+	// px draws the picture interface; nil for the text one.
+	px *pixEngine
 	// applyLive tints the terminal once, in the theme Enter applied.
 	applyLive *ghostty.Live
 
@@ -175,6 +182,9 @@ func New(paths ghostty.Paths, tree *ghostty.Tree, lib *ghostty.Library, state *g
 			out = os.Stdout
 		}
 		m.imgs = newImageStore(out)
+		if opts.Pixel && opts.PixCell[0] > 0 && opts.PixCell[1] > 0 {
+			m.px = newPixEngine(opts)
+		}
 		m.refreshCell()
 	}
 	m.darkDesktop = ghostty.DarkDesktop()
@@ -428,6 +438,9 @@ func (m *Model) render() string {
 		// One line, on the terminal's own screen, under what was there.
 		ui := m.panelChrome()
 		return rebase(ui.fill(ui.base().Render(" ")+ui.keyHintFit(m.width-2, "any key", "brings ghostty-config back"), m.width), ui.base())
+	}
+	if m.pixelOn() {
+		return m.renderPixel()
 	}
 	body := m.viewMain()
 	if m.overlay != overlayNone {

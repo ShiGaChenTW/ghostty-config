@@ -30,6 +30,9 @@ type harness struct {
 	paths ghostty.Paths
 }
 
+// harnessXDG is where, under the test's directory, the config lives.
+var harnessXDG = "xdg"
+
 func newHarness(t *testing.T, config string) *harness {
 	t.Helper()
 	return newHarnessWith(t, config, Options{NoReload: true})
@@ -42,7 +45,7 @@ func newHarnessWith(t *testing.T, config string, opts Options) *harness {
 	os.MkdirAll(builtin, 0o755)
 	os.WriteFile(filepath.Join(builtin, "Catppuccin Mocha"), []byte("palette = 0=#45475a\npalette = 1=#f38ba8\npalette = 2=#a6e3a1\npalette = 3=#f9e2af\npalette = 4=#89b4fa\npalette = 5=#f5c2e7\npalette = 6=#94e2d5\npalette = 7=#a6adc8\npalette = 8=#585b70\npalette = 9=#f37799\npalette = 10=#89d88b\npalette = 11=#ebd391\npalette = 12=#74a8fc\npalette = 13=#f2aede\npalette = 14=#6bd7ca\npalette = 15=#bac2de\nbackground = #1e1e2e\nforeground = #cdd6f4\ncursor-color = #f5e0dc\ncursor-text = #1e1e2e\nselection-background = #585b70\nselection-foreground = #cdd6f4\n"), 0o644)
 	os.WriteFile(filepath.Join(builtin, "Dracula"), []byte("palette = 0=#21222c\npalette = 1=#ff5555\npalette = 2=#50fa7b\npalette = 3=#f1fa8c\npalette = 4=#bd93f9\npalette = 5=#ff79c6\npalette = 6=#8be9fd\npalette = 7=#f8f8f2\npalette = 8=#6272a4\npalette = 9=#ff6e6e\npalette = 10=#69ff94\npalette = 11=#ffffa5\npalette = 12=#d6acff\npalette = 13=#ff92df\npalette = 14=#a4ffff\npalette = 15=#ffffff\nbackground = #282a36\nforeground = #f8f8f2\n"), 0o644)
-	xdg := filepath.Join(dir, "xdg")
+	xdg := filepath.Join(dir, harnessXDG)
 	os.MkdirAll(xdg, 0o755)
 	if config != "" {
 		os.WriteFile(filepath.Join(xdg, "config"), []byte(config), 0o644)
@@ -190,7 +193,7 @@ func (h *harness) dump(name string) {
 }
 
 func (h *harness) config() string {
-	data, _ := os.ReadFile(filepath.Join(h.dir, "xdg", "config"))
+	data, _ := os.ReadFile(filepath.Join(h.dir, harnessXDG, "config"))
 	return string(data)
 }
 

@@ -84,6 +84,26 @@ func (s *imageStore) ensure(key string, cols, rows int, draw func() []byte) uint
 	return id
 }
 
+// ensureRGBA is ensure for raw pixels, w by h, shown on cols by rows cells.
+// file, when set, puts the pixels in a temporary file the terminal reads.
+func (s *imageStore) ensureRGBA(key string, p []byte, w, h, cols, rows int, file func([]byte) string) uint32 {
+	if id, ok := s.ids[key]; ok {
+		s.touch(key)
+		return id
+	}
+	id := s.next
+	s.next++
+	s.ids[key] = id
+	s.touch(key)
+	path := ""
+	if file != nil {
+		path = file(p)
+	}
+	s.queue.WriteString(kimg.TransmitRGBA(id, p, w, h, cols, rows, path))
+	s.evict()
+	return id
+}
+
 // flush writes what is queued, in pieces the terminal reads whole.
 func (s *imageStore) flush() {
 	if s.queue.Len() == 0 || s.out == nil {
@@ -119,12 +139,16 @@ func supportsImages() bool {
 
 // imagesOn is whether pictures are drawn this frame.
 func (m *Model) imagesOn() bool {
-	return m.opts.Images && m.imgs != nil && m.cellW > 0 && m.cellH > 0
+	return m.opts.Images && m.imgs != nil && m.cellW > 0 && m.cellH > 0 && m.px == nil
 }
 
 // refreshCell reads the cell size again, as after a resize; a change throws
 // away the pictures drawn for the old one.
 func (m *Model) refreshCell() {
+	if m.px != nil {
+		m.refreshPixCell()
+		return
+	}
 	w, h := cellPixels()
 	if m.opts.CellW > 0 && m.opts.CellH > 0 {
 		w, h = m.opts.CellW, m.opts.CellH

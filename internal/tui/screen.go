@@ -67,6 +67,17 @@ func (m *Model) screen() screenKind {
 // to a readable width and leaves the rest to the explanation.
 func (m *Model) layout() layout {
 	l := layout{kind: m.screen(), bodyY: headRows, mainX: marginX}
+	if m.pixelOn() {
+		// The picture interface lays itself out; what the keys need from the
+		// last frame is how many cards make a row and how many rows show.
+		l.cols = maxInt(m.px.cols, 1)
+		l.bodyH = maxInt(m.px.cardRows, 1) * tileRowH
+		l.listH = maxInt(m.px.listRows, 1)
+		if l.kind == screenGallery {
+			l.listH = maxInt(m.px.cardRows, 1) * l.cols
+		}
+		return l
+	}
 	inner := maxInt(m.width-2*marginX, 8)
 	foot := 3 // a row of air, the status line, the keys
 	if l.kind == screenGallery {
@@ -531,6 +542,11 @@ func (m *Model) viewKeys(ui chrome) string {
 
 // keyLine is what you can press here, most useful first, as many as fit.
 func (m *Model) keyLine(ui chrome, width int) string {
+	return ui.keyHintFitSep(width, "   ", m.keyPairs()...)
+}
+
+// keyPairs is what can be pressed here, as key and word, most useful first.
+func (m *Model) keyPairs() []string {
 	var pairs []string
 	switch {
 	case m.editing:
@@ -539,6 +555,9 @@ func (m *Model) keyLine(ui chrome, width int) string {
 		pairs = []string{"↑↓", "choose"}
 		if o := m.selected(); o != nil && o.cmd != nil && o.cmd.adjust {
 			pairs = append(pairs, "←→", "change")
+			if o.cmd.set != nil {
+				pairs = append(pairs, "Delete", "default")
+			}
 		}
 		pairs = append(pairs, "Enter", "open", "Tab", "section", "Esc", "leave", "F2", "peek", "F1", "help", "type", "to search")
 	case themeCommand(m.cmd):
@@ -552,7 +571,7 @@ func (m *Model) keyLine(ui chrome, width int) string {
 	default:
 		pairs = []string{"↑↓", "move", "Enter", "apply", "Esc", "back", "Tab", "complete", "F2", "peek", "F1", "help"}
 	}
-	return ui.keyHintFitSep(width, "   ", pairs...)
+	return pairs
 }
 
 // card draws a dialog as a surface laid over the screen: a ground a little

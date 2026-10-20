@@ -172,6 +172,9 @@ func (m *Model) pressButton(name string) (tea.Model, tea.Cmd) {
 		}
 	case "close":
 		m.overlay = overlayNone
+	case "enter":
+		// The footer's button does what Enter does.
+		return m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	}
 	return m, nil
 }

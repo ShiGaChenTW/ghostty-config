@@ -1,86 +1,90 @@
-# ghostty-config
+<p align="center"><img src="img/logo.png" alt="" width="96"></p>
 
-A full-screen terminal UI to set up [Ghostty](https://ghostty.org): themes, fonts, window, input and session options, shaders. It edits your existing config in place and takes the colours of the terminal it runs in, light or dark.
+<h1 align="center">ghostty-config</h1>
+
+<p align="center">Themes, fonts, window and input settings for <a href="https://ghostty.org">Ghostty</a>, in a full-screen interface inside the terminal.<br>A single binary, installed with one command: no Go, no git, no dependencies.</p>
 
 <p align="center">
-  <img src="img/themes.png" alt="The wall of themes in a dark terminal" width="900">
+  <a href="#install"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fghostty-config.vitruves.workers.dev%2Fbadge.json&style=flat-square" alt="Installs"></a>
+  <a href="https://github.com/vitruves/ghostty-config/tags"><img src="https://img.shields.io/github/v/tag/vitruves/ghostty-config?sort=semver&label=release&style=flat-square&color=3d6fd6" alt="Latest release"></a>
+  <img src="https://img.shields.io/badge/macOS%20%C2%B7%20Linux-555?style=flat-square" alt="macOS and Linux">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-555?style=flat-square" alt="MIT licence"></a>
+</p>
+
+<p align="center">
+  <img src="img/themes.png" alt="The wall of themes" width="820">
 </p>
 
 ## Install
 
+**One command. No Go, no git, no dependencies.**
+
 ```bash
-go install github.com/vitruves/ghostty-config/cmd/ghostty-config@latest
+curl -fsSL https://ghostty-config.vitruves.workers.dev/install.sh | sh
 ```
 
-Or from source, with Go 1.26:
+The script downloads a single binary for your system (macOS or Linux, Intel or ARM, any distribution), verifies its checksum and puts it in `~/.local/bin`. It sends nothing; the installs badge counts downloads of the script. On any other system it builds from source, which does need `git` and Go.
+
+From source:
 
 ```bash
-git clone https://github.com/vitruves/ghostty-config.git
-cd ghostty-config
+git clone https://github.com/vitruves/ghostty-config.git && cd ghostty-config
 make build && make local-install
 ```
 
-## Usage
+## Use
 
-Run `ghostty-config`. Pick a section with `Tab`, move with the arrows, type to search or to run a command, apply with `Enter`. Browsing never changes your config: a theme is written when you press `Enter` on it, a setting when you choose its value.
+Run `ghostty-config`. Browsing never changes anything: a theme is written when you press `Enter` on it, and a setting when you change its value.
 
 | Key | Action |
 | --- | --- |
 | `Tab` | Next section |
-| `←` `↓` `↑` `→` | Walk the wall of themes or a list; on a setting, `←` `→` change its value |
-| `Enter` | Apply the highlighted theme or value, or open a command |
-| `Ctrl+T` | Try the highlighted theme in this terminal, writing nothing |
-| `Ctrl+F` `Ctrl+X` | Star a theme; delete a theme file, after asking |
-| `F2` `F1` | Step aside to see the terminal; help |
-| `Esc` `Ctrl+C` | Go back, then leave; leave without writing anything |
+| `↑` `↓` | Move through the list |
+| `←` `→` | Change the highlighted setting |
+| `Delete` | Reset the setting to Ghostty's default |
+| `Enter` | Apply the theme, or open the setting's full list of values |
+| `/` or type | Search themes, settings and commands |
+| `Ctrl+T` `Ctrl+F` | Try a theme in this terminal; star it |
+| `F1` `Esc` | Help; go back, then quit |
 
 <p align="center">
-  <img src="img/themes-light.png" alt="The same wall in a light terminal" width="32%">
-  <img src="img/fonts.png" alt="Fonts, with the families that can be installed" width="32%">
-  <img src="img/window.png" alt="Window settings, with a picture of the window" width="32%">
+  <img src="img/window.png" alt="Window settings in a light terminal" width="820">
 </p>
-<p align="center"><sub>A light terminal · Fonts · Window settings</sub></p>
 
 ## Sections
 
-| Section | What it holds |
-| --- | --- |
-| Themes | Every theme as a card, grouped by family and running from dark to light. 252 curated themes in 27 families, all checked for contrast. Create, edit, save and delete your own |
-| Fonts | Family, style, size, spacing, ligatures. Families that are not installed yet are listed under the others: `Enter` downloads one from Nerd Fonts |
-| Window | Presets, title bar, opacity, blur, padding, beside a picture of the window as the settings draw it |
-| Input | Cursor, clipboard, mouse, Option as Alt |
-| Session | Scrollback, closing, notifications, restoring windows |
-| Extensions | Shaders and packs of themes (Catppuccin, Rosé Pine), downloaded for you. Source and licence are shown before anything is installed |
-| Tool | Reload, the interface's own colours, config lines that override the theme, backup, paths |
+- **Themes:** 252 curated themes in 27 families, plus your own and the ones Ghostty ships, each shown as a card and checked for contrast. You can create, edit and save themes.
+- **Fonts:** family, style, size, spacing and ligatures. Fonts that are not installed can be downloaded from Nerd Fonts.
+- **Window:** title bar, opacity, blur and padding, with a preview of the window.
+- **Input and Session:** cursor, clipboard, mouse, keyboard, scrollback, notifications and window restore.
+- **Extensions:** shaders and theme packs, with their source and licence shown before anything is installed.
+- **Tool:** reload Ghostty, change the interface's own colours, back up the config, show the paths in use.
 
 ## Good to know
 
-- **Light or dark.** The interface asks the terminal for its colours and follows it when they change. `Interface`, in Tool, offers fixed schemes instead.
-- **Pictures.** In Ghostty and Kitty the cards are images, drawn through the Kitty graphics protocol. Elsewhere, and inside tmux or screen, they are drawn from cells. `-no-images` and `-images` force one or the other.
-- **Shaders.** One at a time. Where the tool can reload Ghostty, it asks whether to keep a shader it has just switched on and puts the config back after ten seconds without an answer, since a shader that fails can leave the window unreadable.
-- **Your files.** The tool reads the files Ghostty reads and rewrites a setting on the line where it is defined; comments and other lines are left alone. Each file is backed up to `~/.config/ghostty-config/backups/` before its first change.
-- **Network.** Used only for the downloads you ask for and, at most once a day, to check for a newer release. `-no-update-check` turns that off.
-- **Reload.** Ghostty has no reload command. On macOS the tool sends it the reload shortcut, which needs the Accessibility permission; elsewhere, reload Ghostty yourself.
+- **Display.** In Ghostty and Kitty, the whole interface is drawn as images through the Kitty graphics protocol. Only the rows that change are redrawn, which takes a millisecond or two. Anywhere else, and inside tmux or screen, it is drawn with plain terminal text.
+- **Your files.** Each setting is rewritten on the line where it is defined, and comments are kept. Every file is backed up to `~/.config/ghostty-config/backups/` before its first change.
+- **Reload.** On macOS the tool sends Ghostty its reload shortcut, which needs the Accessibility permission. Elsewhere, reload Ghostty yourself.
+- **Network.** Used only for downloads you ask for, and at most once a day to check for a new release.
 
 ## Options
 
 ```
 -config file            edit this file instead of the default config
 -themes dir             user themes directory
--export-collection dir  write the 252 curated themes to a directory and exit
+-cells                  draw the interface with terminal text, keeping images for theme cards
+-no-images              never draw images
+-images                 draw images even where the terminal is not known to support them
+-plain                  use only characters every terminal can draw
 -no-reload              never ask Ghostty to reload
--no-images              never draw pictures: the wall of themes is made of cells
--images                 draw pictures even where the terminal is not known to show them
--plain                  use only glyphs that every terminal can draw
+-no-update-check        never check GitHub for a new release
+-export-collection dir  write the curated themes to a directory and exit
 -paths                  print the files that are read and written
--no-update-check        never look for a newer release on GitHub
 -version                print the version
 ```
 
 ## Credits
 
-Thanks to Mitchell Hashimoto and the contributors of [Ghostty](https://github.com/ghostty-org/ghostty) for the terminal. Shaders come from [KroneCorylus/ghostty-shader-playground](https://github.com/KroneCorylus/ghostty-shader-playground) and [0xhckr/ghostty-shaders](https://github.com/0xhckr/ghostty-shaders).
+[Ghostty](https://github.com/ghostty-org/ghostty) is by Mitchell Hashimoto and its contributors. Shaders come from [KroneCorylus/ghostty-shader-playground](https://github.com/KroneCorylus/ghostty-shader-playground) and [0xhckr/ghostty-shaders](https://github.com/0xhckr/ghostty-shaders). The interface is set in Google Sans Flex and Google Sans Code (SIL OFL).
 
-## License
-
-MIT
+MIT licence.

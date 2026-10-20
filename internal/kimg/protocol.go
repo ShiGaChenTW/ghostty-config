@@ -1,6 +1,8 @@
 package kimg
 
 import (
+	"bytes"
+	"compress/zlib"
 	"encoding/base64"
 	"fmt"
 	"strings"
@@ -106,4 +108,41 @@ func Place(id, placement uint32, col, row, cols, rows int) string {
 // Unplace removes one placement and leaves the picture in memory.
 func Unplace(id, placement uint32) string {
 	return fmt.Sprintf("\x1b_Ga=d,d=i,i=%d,p=%d,q=2\x1b\\", id, placement)
+}
+
+// TransmitRGBA sends raw 8-bit RGBA pixels, w by h, and creates a virtual
+// placement cols by rows cells large, like Transmit. With a file path the
+// terminal reads the pixels from that temporary file and deletes it, which
+// costs nothing on the pty; without one they go inline, compressed.
+func TransmitRGBA(id uint32, pix []byte, w, h, cols, rows int, file string) string {
+	ctrl := fmt.Sprintf("a=T,f=32,s=%d,v=%d,U=1,i=%d,c=%d,r=%d,q=2", w, h, id, cols, rows)
+	if file != "" {
+		return "\x1b_G" + ctrl + ",t=t;" + base64.StdEncoding.EncodeToString([]byte(file)) + "\x1b\\"
+	}
+	var z bytes.Buffer
+	zw, _ := zlib.NewWriterLevel(&z, zlib.BestSpeed)
+	_, _ = zw.Write(pix)
+	_ = zw.Close()
+	enc := base64.StdEncoding.EncodeToString(z.Bytes())
+	var b strings.Builder
+	first := true
+	for len(enc) > 0 {
+		n := chunk
+		if n > len(enc) {
+			n = len(enc)
+		}
+		part := enc[:n]
+		enc = enc[n:]
+		more := 0
+		if len(enc) > 0 {
+			more = 1
+		}
+		if first {
+			fmt.Fprintf(&b, "\x1b_G%s,o=z,m=%d;%s\x1b\\", ctrl, more, part)
+			first = false
+		} else {
+			fmt.Fprintf(&b, "\x1b_Gm=%d;%s\x1b\\", more, part)
+		}
+	}
+	return b.String()
 }

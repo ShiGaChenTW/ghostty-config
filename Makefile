@@ -1,7 +1,7 @@
 BINARY_NAME=ghostty-config
 BUILD_DIR=build
 
-.PHONY: build clean install local-install test run export-collection shots
+.PHONY: build clean install local-install test run export-collection shots readme-shots
 
 build:
 	@mkdir -p $(BUILD_DIR)
@@ -36,3 +36,10 @@ export-collection: build
 # interpreter that has it.
 shots:
 	tools/shot.sh build/shots TestPaletteFrames
+
+# Draw the README's pictures from the picture interface and frame them as
+# windows. Needs Pillow, like shots.
+readme-shots:
+	rm -rf build/readme
+	GHOSTTY_CONFIG_README=$(CURDIR)/build/readme go test ./internal/tui -run TestReadmeShots -count=1
+	for n in themes window; do $${PYTHON:-python3} tools/frame.py build/readme/$$n.png img/$$n.png 1600; done

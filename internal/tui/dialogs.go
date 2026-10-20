@@ -170,11 +170,10 @@ func (m *Model) viewHelp() string {
 		}
 		return append(lines, "")
 	}
-	left := concat(
-		group("Everywhere", "type", "A command, then its argument", "↑ ↓", "Walk the list", "Enter", "Open, or apply the line", "Tab", "Next section, or complete", "Esc", "Back; on an empty prompt, leave", "F2", "Step aside to see the terminal", "⇧↑ ⇧↓", "Scroll the explanation", "Ctrl+C", "Leave, writing nothing", "F1", "This help"),
-		group("The wall of themes", "← ↓ ↑ →", "Walk the cards", "⇧↑ ⇧↓", "Previous, next group", "Enter", "Apply the highlighted theme", "Ctrl+T", "Try it in this terminal", "Ctrl+F", "Star or unstar it", "Ctrl+X", "Delete its file, after asking"),
-		group("Slot editor", "← →", "Brighten / darken", "⇧← ⇧→", "Rotate hue", "- +", "Saturation", "[ ]", "Lightness", "hex digits", "Type an exact value", "⌫", "Clear an optional slot", "u", "Undo this slot", "↑ ↓", "Next slot", "Esc", "Back to the prompt"),
-	)
+	var left []string
+	for _, g := range helpKeyGroups() {
+		left = append(left, group(g.title, g.pairs...)...)
+	}
 	var right []string
 	right = append(right, c.bold(c.accent).Render(" Commands"), c.mutedS().Render("  type one, then Enter; Tab completes"), "")
 	for _, g := range groups {
@@ -211,6 +210,21 @@ func (m *Model) viewHelp() string {
 	return overlayCentered(m, m.viewMain(), box)
 }
 
+// helpGroup is a titled list of keys and what they do.
+type helpGroup struct {
+	title string
+	pairs []string
+}
+
+func helpKeyGroups() []helpGroup {
+	return []helpGroup{
+		{"Everywhere", []string{"type", "A command, then its argument", "↑ ↓", "Walk the list", "Enter", "Open, or apply the line", "Tab", "Next section, or complete", "Esc", "Back; on an empty prompt, leave", "F2", "Step aside to see the terminal", "⇧↑ ⇧↓", "Scroll the explanation", "Ctrl+C", "Leave, writing nothing", "F1", "This help"}},
+		{"Settings", []string{"← →", "Change the highlighted setting", "Delete", "Put it back to Ghostty's default"}},
+		{"The wall of themes", []string{"← ↓ ↑ →", "Walk the cards", "⇧↑ ⇧↓", "Previous, next group", "Enter", "Apply the highlighted theme", "Ctrl+T", "Try it in this terminal", "Ctrl+F", "Star or unstar it", "Ctrl+X", "Delete its file, after asking"}},
+		{"Slot editor", []string{"← →", "Brighten / darken", "⇧← ⇧→", "Rotate hue", "- +", "Saturation", "[ ]", "Lightness", "hex digits", "Type an exact value", "⌫", "Clear an optional slot", "u", "Undo this slot", "↑ ↓", "Next slot", "Esc", "Back to the prompt"}},
+	}
+}
+
 func concat(groups ...[]string) []string {
 	var out []string
 	for _, g := range groups {
@@ -223,18 +237,7 @@ func concat(groups ...[]string) []string {
 // the interface already wears.
 func (m *Model) viewWelcome() string {
 	c := m.panelChrome()
-	features := [][3]string{
-		{"← ↓ ↑ →", "The wall of themes", "every theme is a card, grouped by family, dark to light; Enter applies"},
-		{"type", "Search, or a command", "catp finds a theme; edit red, new triadic and save mine are commands"},
-		{"Tab", "The sections", "Themes, Fonts, Window, Input, Session, Extensions, Tool"},
-		{"← →", "Change a setting", "where it is listed; Enter shows every value and what it means"},
-		{"font", "Pick or install a font", "the families Ghostty can load, and under them the ones to download"},
-		{"shader", "Extensions", "shaders and packs of themes, fetched and switched on for you"},
-		{"", "", ""},
-		{"Ctrl+T", "Try a theme here", "paints this terminal and writes nothing; F2 steps aside to look"},
-		{"Esc", "Back", "to the section's list, and from there out; leaving applies nothing"},
-		{"F1", "All keys", "and the full list of commands"},
-	}
+	features := welcomeFeatures()
 	var lines []string
 	add := func(s string) { lines = append(lines, s) }
 	center := func(s string) string {
@@ -286,4 +289,21 @@ func (m *Model) viewWelcome() string {
 		lines[i] = rebase(c.fill(lines[i], m.width), c.base())
 	}
 	return strings.Join(lines[:m.height], "\n")
+}
+
+// welcomeFeatures are the lines of the first screen: a key, what it opens,
+// and a word on it. An empty line is a pause.
+func welcomeFeatures() [][3]string {
+	return [][3]string{
+		{"← ↓ ↑ →", "The wall of themes", "every theme is a card, grouped by family, dark to light; Enter applies"},
+		{"type", "Search, or a command", "catp finds a theme; edit red, new triadic and save mine are commands"},
+		{"Tab", "The sections", "Themes, Fonts, Window, Input, Session, Extensions, Tool"},
+		{"← →", "Change a setting", "where it is listed; Enter shows every value and what it means"},
+		{"font", "Pick or install a font", "the families Ghostty can load, and under them the ones to download"},
+		{"shader", "Extensions", "shaders and packs of themes, fetched and switched on for you"},
+		{"", "", ""},
+		{"Ctrl+T", "Try a theme here", "paints this terminal and writes nothing; F2 steps aside to look"},
+		{"Esc", "Back", "to the section's list, and from there out; leaving applies nothing"},
+		{"F1", "All keys", "and the full list of commands"},
+	}
 }

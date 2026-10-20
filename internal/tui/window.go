@@ -56,6 +56,22 @@ func (m *Model) adjustSelected(dir int) (tea.Cmd, bool) {
 	return cmd, true
 }
 
+// resetSelected puts the highlighted setting of the menu back to its
+// default, which removes its line from the config.
+func (m *Model) resetSelected() (tea.Cmd, bool) {
+	o := m.selected()
+	if o == nil || o.cmd == nil || o.cmd.set == nil || o.cmd.set.fallback == "" {
+		return nil, false
+	}
+	s := o.cmd.set
+	if strings.EqualFold(s.get(m), s.fallback) {
+		return nil, true
+	}
+	cmd := o.cmd.run(m, "", &option{value: s.fallback})
+	m.recompute()
+	return cmd, true
+}
+
 // wrapSyntax writes a command's syntax, breaking a long list of choices after
 // a bar rather than cutting it.
 func wrapSyntax(style lipgloss.Style, s string, width int) []string {
@@ -85,6 +101,21 @@ func (m *Model) windowPicture(width int, cmd string, opt *option) []string {
 	if !m.imagesOn() || m.cur == nil || width < 30 {
 		return nil
 	}
+	spec := m.windowSpec(cmd, opt)
+	ui := m.c
+	cols, rows := minInt(width, 48), 9
+	key := strings.Join([]string{"window", m.cur.Name, spec.BG, spec.FG, spec.Cursor, strings.Join(spec.Pal[:], ""),
+		spec.Titlebar, boolKey(spec.Shadow), fmt.Sprintf("%.2f", spec.Opacity), boolKey(spec.Blur), itoa(spec.PadX), itoa(spec.PadY),
+		boolKey(color.IsDark(ui.bg)), ui.accent, ui.warn, itoa(cols)}, "|")
+	id := m.imgs.ensure(key, cols, rows, func() []byte {
+		return kimg.Window(cols, rows, m.cellW, m.cellH, spec).PNG()
+	})
+	return pictureRows(id, cols, rows, ui.paint())
+}
+
+// windowSpec is the window as the settings have it, with the setting named
+// cmd taking the highlighted value instead of its own.
+func (m *Model) windowSpec(cmd string, opt *option) kimg.WindowSpec {
 	value := func(name, fallback string) string {
 		if name == cmd && opt != nil && opt.value != "" {
 			return opt.value
@@ -119,12 +150,5 @@ func (m *Model) windowPicture(width int, cmd string, opt *option) []string {
 		PadX:     clampInt(atoiDefault(value("paddingx", "2"), 2), 0, 40),
 		PadY:     clampInt(atoiDefault(value("paddingy", "2"), 2), 0, 30),
 	}
-	cols, rows := minInt(width, 48), 9
-	key := strings.Join([]string{"window", m.cur.Name, spec.BG, spec.FG, spec.Cursor, strings.Join(spec.Pal[:], ""),
-		titlebar, boolKey(spec.Shadow), fmt.Sprintf("%.2f", opacity), boolKey(spec.Blur), itoa(spec.PadX), itoa(spec.PadY),
-		boolKey(color.IsDark(ui.bg)), ui.accent, ui.warn, itoa(cols)}, "|")
-	id := m.imgs.ensure(key, cols, rows, func() []byte {
-		return kimg.Window(cols, rows, m.cellW, m.cellH, spec).PNG()
-	})
-	return pictureRows(id, cols, rows, ui.paint())
+	return spec
 }

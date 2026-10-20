@@ -53,6 +53,8 @@ type command struct {
 	// adjust marks a setting whose values form a short scale: on the menu,
 	// ← and → step it without opening it.
 	adjust bool
+	// set is the setting a command was made from, nil for other commands.
+	set *setting
 }
 
 // Groups, in the order the menu shows them.
@@ -504,6 +506,7 @@ func (m *Model) buildCommands() []*command {
 // settingCommand turns a setting row into a command with its values as options.
 func settingCommand(s setting) *command {
 	c := &command{name: s.cmd, group: s.group, syntax: s.syntax, desc: s.detail, adjust: true}
+	c.set = &s
 	c.options = func(m *Model, arg string) []option {
 		current := s.get(m)
 		var out []option
@@ -675,11 +678,13 @@ type setting struct {
 	format                            func(v float64) string
 	note                              string
 	key                               string
+	// fallback is the value in effect when the config does not set one.
+	fallback string
 }
 
 func keySetting(cmd, key, label, detail string, options []string, fallback string) setting {
 	return setting{
-		cmd: cmd, group: "Window", label: label, syntax: cmd + " " + strings.Join(options, "|"), detail: detail, options: options, key: key,
+		cmd: cmd, group: "Window", label: label, syntax: cmd + " " + strings.Join(options, "|"), detail: detail, options: options, key: key, fallback: fallback,
 		get: func(m *Model) string {
 			if v := m.tree.Value(key, ""); v != "" {
 				return v
@@ -729,7 +734,7 @@ func boolSetting(cmd, key, label, detail string, fallback bool) setting {
 func numberSetting(cmd, key, label, detail string, fallback, min, max, step float64, format func(float64) string) setting {
 	return setting{
 		cmd: cmd, group: "Window", label: label, syntax: fmt.Sprintf("%s <%s–%s>", cmd, format(min), format(max)), detail: detail,
-		numeric: true, min: min, max: max, step: step, format: format, key: key,
+		numeric: true, min: min, max: max, step: step, format: format, key: key, fallback: format(fallback),
 		get: func(m *Model) string { return m.tree.Value(key, format(fallback)) },
 		set: func(m *Model, v string) tea.Cmd {
 			if v == format(fallback) {
@@ -763,7 +768,7 @@ func (m *Model) buildSettings() []setting {
 				"hidden":      "no bar, frame and rounded corners kept; drag with option-click",
 				"none":        "no frame at all and no tabs (window-decoration = none)",
 			},
-			key: "macos-titlebar-style",
+			key: "macos-titlebar-style", fallback: "transparent",
 			get: func(m *Model) string {
 				if dec := strings.ToLower(m.tree.Value("window-decoration", "auto")); dec == "none" || dec == "false" {
 					return "none"
@@ -833,7 +838,7 @@ func (m *Model) buildSettings() []setting {
 	lh.group = "Fonts"
 	s = append(s, lh)
 	lig := setting{
-		cmd: "ligatures", group: "Fonts", label: "Ligatures", syntax: "ligatures on|off", detail: "Programming ligatures (calt/liga/dlig), for fonts that have them", options: []string{"on", "off"},
+		cmd: "ligatures", group: "Fonts", label: "Ligatures", syntax: "ligatures on|off", detail: "Programming ligatures (calt/liga/dlig), for fonts that have them", options: []string{"on", "off"}, fallback: "on",
 		get: func(m *Model) string {
 			if m.tree.LigaturesDisabled() {
 				return "off"
