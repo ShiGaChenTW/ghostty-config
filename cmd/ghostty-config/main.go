@@ -31,6 +31,7 @@ func main() {
 	showVersion := flag.Bool("version", false, "Show version information")
 	listPaths := flag.Bool("paths", false, "Print the files this tool would read and write, then exit")
 	noUpdateCheck := flag.Bool("no-update-check", false, "Never ask GitHub whether a newer release exists")
+	lang := flag.String("lang", "", "Interface language for this session: en or zh-Hant (zh_TW, zh_HK, zh_MO). Does not change the saved choice")
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, `ghostty-config — themes, fonts and window settings for Ghostty, edited live
@@ -49,6 +50,7 @@ Options:
   -plain                 Use only glyphs every terminal and font can draw
   -paths                 Show which files are read and written
   -no-update-check       Never look for a newer release on GitHub
+  -lang en|zh-Hant       Interface language for this session
   -version               Show version
 
 Ghostty's config files are read in the order Ghostty reads them — config,
@@ -125,7 +127,7 @@ Keys:
 	opts := tui.Options{
 		NoReload: *noReload, Plain: *plain,
 		Images:  images,
-		Version: version, NoUpdateCheck: *noUpdateCheck,
+		Version: version, NoUpdateCheck: *noUpdateCheck, Lang: *lang,
 	}
 	// The picture interface needs the exact size of a cell, which only the
 	// terminal can tell, so it is asked before anything reads the keyboard.

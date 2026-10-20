@@ -57,6 +57,9 @@ type Options struct {
 	Version string
 	// NoUpdateCheck never asks GitHub for a newer release.
 	NoUpdateCheck bool
+	// Lang overrides the saved interface language for this session only.
+	// Empty leaves the saved choice. Unrecognised values are ignored.
+	Lang string
 }
 
 // Model is the whole editor: one prompt, a list of what it can mean, and a
@@ -69,6 +72,8 @@ type Model struct {
 	fonts *ghostty.FontCatalog
 	live  *ghostty.Live
 	opts  Options
+	// langOverride is set from -lang and is not written to state.
+	langOverride string
 
 	width, height int
 	overlay       overlay
@@ -202,6 +207,9 @@ func New(paths ghostty.Paths, tree *ghostty.Tree, lib *ghostty.Library, state *g
 		fonts: ghostty.NewFontCatalog(paths.Binary),
 		c:     defaultChrome(),
 		caps:  detectTerminal(opts.Plain),
+	}
+	if n := NormalizeLang(opts.Lang); n != "" {
+		m.langOverride = n
 	}
 	if opts.Images {
 		out := opts.ImgOut
@@ -568,7 +576,7 @@ const (
 
 func (m *Model) setStatus(kind statusKind, format string, a ...interface{}) {
 	m.statusSeq++
-	m.status = fmt.Sprintf(format, a...)
+	m.status = fmt.Sprintf(m.t(format), a...)
 	m.statusKind = kind
 }
 
@@ -619,7 +627,7 @@ var reloadGhostty = ghostty.Reload
 
 // reloadHint tells the user how to reload when the tool cannot.
 func (m *Model) reloadHint() string {
-	return "press " + ghostty.ReloadHint(m.paths.Binary) + " in Ghostty to reload"
+	return m.tf("press %s in Ghostty to reload", ghostty.ReloadHint(m.paths.Binary))
 }
 
 // autoReloadWorks reports whether changes reach Ghostty without help.
@@ -642,13 +650,13 @@ func (m *Model) quit() (tea.Model, tea.Cmd) {
 		if !m.cur.Writable() {
 			name = m.suggestName()
 		}
-		m.confirmText = fmt.Sprintf("You have unsaved edits. Save them as %s and apply it before leaving?", name)
+		m.confirmText = m.tf("You have unsaved edits. Save them as %s and apply it before leaving?", name)
 		m.confirmYes = func(m *Model) tea.Cmd {
 			saved, ok := m.persistCurrent()
 			if !ok {
 				return nil
 			}
-			m.exitNote = "Saved and applied " + saved
+			m.exitNote = m.t("Saved and applied ") + saved
 			return m.leave()
 		}
 		m.confirmNo = func(m *Model) tea.Cmd { return m.leave() }

@@ -130,7 +130,7 @@ func (m *Model) useShader(name string) tea.Cmd {
 	if s.Installed(m.paths.ConfigDir) {
 		return m.switchShaderOn(s.Name, s.File(m.paths.ConfigDir))
 	}
-	m.busyText = "Downloading " + s.Name + " from " + s.Repo + "…"
+	m.busyText = m.tf("Downloading %s from %s…", s.Name, s.Repo)
 	m.overlay = overlayBusy
 	dir := m.paths.ConfigDir
 	return func() tea.Msg {
@@ -246,7 +246,7 @@ func (m *Model) installPack(name string) tea.Cmd {
 		m.info("%s is already installed — its themes are on the wall under Yours", p.Name)
 		return nil
 	}
-	m.busyText = "Downloading " + p.Name + " from " + p.Repo + "…"
+	m.busyText = m.tf("Downloading %s from %s…", p.Name, p.Repo)
 	m.overlay = overlayBusy
 	dir := m.paths.ThemesDir
 	return func() tea.Msg {

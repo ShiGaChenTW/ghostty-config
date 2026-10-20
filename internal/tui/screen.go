@@ -157,30 +157,31 @@ func (m *Model) viewHeader(ui chrome) string {
 		if i == m.group && !searching {
 			st = ui.bold(ui.fg).Underline(true).UnderlineColor(lipgloss.Color(ui.accent))
 		}
-		b.WriteString(st.Render(g))
-		w := len([]rune(g))
+		label := m.t(g)
+		b.WriteString(st.Render(label))
+		w := lipgloss.Width(label)
 		m.addRegion(x-1, 0, w+2, 1, hitGroup, i, g)
 		x += w
 	}
 	left := b.String()
 
-	applied := "no theme set"
+	applied := m.t("no theme set")
 	if m.applied != "" {
 		applied = m.applied
 	}
-	theme := ui.mutedS().Render("applied ") + ui.base().Render(applied)
+	theme := ui.mutedS().Render(m.t("applied ")) + ui.base().Render(applied)
 	if m.cur != nil && m.cur.Name != m.applied {
-		theme += ui.mutedS().Render("  ·  showing ") + ui.text(ui.warn).Render(m.cur.Name)
+		theme += ui.mutedS().Render(m.t("  ·  showing ")) + ui.text(ui.warn).Render(m.cur.Name)
 	}
 	if m.dirty {
-		theme += ui.text(ui.warn).Render(" ● unsaved")
+		theme += ui.text(ui.warn).Render(m.t(" ● unsaved"))
 	}
 	notes := ""
 	if len(m.overrides) > 0 {
-		notes += ui.text(ui.warn).Render(fmt.Sprintf("%d colour line(s) override the theme   ", len(m.overrides)))
+		notes += ui.text(ui.warn).Render(m.tf("%d colour line(s) override the theme   ", len(m.overrides)))
 	}
 	if m.reloadFailed {
-		notes += ui.text(ui.warn).Render("reload by hand: " + ghostty.ReloadHint(m.paths.Binary) + "   ")
+		notes += ui.text(ui.warn).Render(m.t("reload by hand: ") + ghostty.ReloadHint(m.paths.Binary) + "   ")
 	}
 	file := ui.mutedS().Render("   " + filepath.Base(m.tree.Primary.Path))
 	// Say as much as fits, the applied theme last to go.
@@ -216,7 +217,7 @@ func (m *Model) viewPromptLine(ui chrome) string {
 		// v2 shows a placeholder only as wide as the input is: give it the room
 		// the row has, minus the margins, the prompt and the count on the right.
 		m.prompt.SetWidth(maxInt(m.width-30, 12))
-		m.prompt.Placeholder = "type a command, or pick one below"
+		m.prompt.Placeholder = m.t("type a command, or pick one below")
 		left = indent(ui) + m.prompt.View()
 	}
 	right := ui.mutedS().Render(m.countWord())
@@ -290,9 +291,9 @@ func (m *Model) viewList(ui chrome, l layout) []string {
 	}
 	if len(m.results) == 0 {
 		if m.cmd != nil && m.cmd.options == nil {
-			return []string{ui.base().Render(truncate(title(m.cmd.syntax), l.mainW)), ui.mutedS().Render(truncate("Enter runs it · Esc goes back", l.mainW))}
+			return []string{ui.base().Render(truncate(title(m.cmd.syntax), l.mainW)), ui.mutedS().Render(truncate(m.t("Enter runs it · Esc goes back"), l.mainW))}
 		}
-		return []string{ui.mutedS().Render(truncate("nothing matches — Esc clears", l.mainW))}
+		return []string{ui.mutedS().Render(truncate(m.t("nothing matches — Esc clears"), l.mainW))}
 	}
 	if m.centre {
 		m.centre = false
@@ -385,7 +386,8 @@ func (m *Model) listRow(ui chrome, o option, selected bool, width int) string {
 	}
 
 	inner := width - 2 - prefixW - 1 // the mark, the sample, a cell at the right
-	detail := o.detail
+	labelText := m.shownLabel(o)
+	detail := m.shownDetail(o)
 	if limit := inner * 3 / 5; lipgloss.Width(detail) > limit {
 		detail = truncate(detail, limit)
 	}
@@ -398,7 +400,7 @@ func (m *Model) listRow(ui chrome, o option, selected bool, width int) string {
 	if labelW < 1 {
 		labelW = 1
 	}
-	body := mark.Render(marker) + prefix + label.Render(pad(truncate(o.label, labelW), labelW)) + fill.Render(" ") + note.Render(detail) + fill.Render(" ")
+	body := mark.Render(marker) + prefix + label.Render(pad(truncate(labelText, labelW), labelW)) + fill.Render(" ") + note.Render(detail) + fill.Render(" ")
 	return fitTo(body, width, bg)
 }
 
@@ -433,7 +435,7 @@ func (m *Model) viewCommandRail(ui chrome, l layout) []string {
 	return s.window(len(cmds), l.bodyH, func(i int, selected bool) string {
 		c := cmds[i]
 		m.addRegion(marginX, l.bodyY+(i-s.offset), l.railW, 1, hitCommand, i, c.name)
-		name := title(c.name)
+		name := m.commandTitle(c)
 		value := truncate(m.currentValueOf(c), l.railW-lipgloss.Width(name)-4)
 		gap := l.railW - 2 - lipgloss.Width(name) - lipgloss.Width(value)
 		if gap < 1 {
@@ -484,13 +486,13 @@ func (m *Model) viewThemeLine(ui chrome) string {
 			}
 		}
 	}
-	right := ui.mutedS().Render("text ") + ui.text(ui.grade(fgRatio)).Render(fmt.Sprintf("%.1f:1 %s", fgRatio, color.Grade(fgRatio)))
+	right := ui.mutedS().Render(m.t("text ")) + ui.text(ui.grade(fgRatio)).Render(fmt.Sprintf("%.1f:1 %s", fgRatio, color.Grade(fgRatio)))
 	if worstName != "" {
-		right += ui.mutedS().Render("   weakest "+worstName+" ") + ui.text(ui.grade(worst)).Render(fmt.Sprintf("%.1f:1", worst))
+		right += ui.mutedS().Render(m.tf("   weakest %s ", worstName)) + ui.text(ui.grade(worst)).Render(fmt.Sprintf("%.1f:1", worst))
 	}
 	note := t.Note
 	if note == "" {
-		note = sourceWord(t)
+		note = m.t(sourceWord(t))
 	}
 	room := m.width - 2*marginX - lipgloss.Width(right) - 3
 	if room < 12 {
@@ -508,12 +510,12 @@ func (m *Model) viewStatus(ui chrome, l layout) string {
 	if l.kind == screenGallery && m.statusKind == statusPlain {
 		if o := m.selected(); o != nil && o.theme != nil {
 			t := o.theme
-			line := ui.mutedS().Render("This is the configured theme.")
+			line := ui.mutedS().Render(m.t("This is the configured theme."))
 			if t.Name != m.applied {
-				line = ui.base().Render("Enter") + ui.mutedS().Render(" writes theme = "+t.Name+" and reloads Ghostty")
+				line = ui.base().Render("Enter") + ui.mutedS().Render(m.tf(" writes theme = %s and reloads Ghostty", t.Name))
 			}
 			if t.Deletable() {
-				line += ui.mutedS().Render("   ·   ") + ui.base().Render("Ctrl+X") + ui.mutedS().Render(" deletes this theme file, after asking")
+				line += ui.mutedS().Render("   ·   ") + ui.base().Render("Ctrl+X") + ui.mutedS().Render(m.t(" deletes this theme file, after asking"))
 			}
 			return indent(ui) + truncate(line, room)
 		}
@@ -570,6 +572,9 @@ func (m *Model) keyPairs() []string {
 		pairs = []string{"Enter", "run", "Esc", "back", "F2", "peek", "F1", "help"}
 	default:
 		pairs = []string{"↑↓", "move", "Enter", "apply", "Esc", "back", "Tab", "complete", "F2", "peek", "F1", "help"}
+	}
+	for i := 1; i < len(pairs); i += 2 {
+		pairs[i] = m.t(pairs[i])
 	}
 	return pairs
 }

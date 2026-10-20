@@ -3,7 +3,6 @@ package tui
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -43,7 +42,7 @@ func (m *Model) showPendingUpdate() {
 func (m *Model) startUpdate() tea.Cmd {
 	v := m.updateLatest
 	m.overlay = overlayBusy
-	m.busyText = "Installing ghostty-config " + v + "…"
+	m.busyText = m.tf("Installing ghostty-config %s…", v)
 	return tea.Batch(m.spin.Tick, func() tea.Msg {
 		path, err := installRelease(context.Background(), v)
 		return updateInstalledMsg{version: v, path: path, err: err}
@@ -58,10 +57,10 @@ func (m *Model) finishUpdate(msg updateInstalledMsg) tea.Cmd {
 		if errors.Is(msg.err, update.ErrUnsupported) {
 			why = "there is no ready-made binary for this system"
 		}
-		m.openMessage(fmt.Sprintf("Could not update to %s: %s. Install it from a shell instead: %s", msg.version, why, update.InstallHint))
+		m.openMessage(m.tf("Could not update to %s: %s. Install it from a shell instead: %s", msg.version, m.t(why), update.InstallHint))
 		return nil
 	}
-	m.updateNote = fmt.Sprintf("ghostty-config is now %s: run it again to use the new version.", msg.version)
-	m.openMessage(fmt.Sprintf("Updated to %s in %s. The new version starts the next time you open ghostty-config.", msg.version, shortenPath(msg.path)))
+	m.updateNote = m.tf("ghostty-config is now %s: run it again to use the new version.", msg.version)
+	m.openMessage(m.tf("Updated to %s in %s. The new version starts the next time you open ghostty-config.", msg.version, shortenPath(msg.path)))
 	return nil
 }

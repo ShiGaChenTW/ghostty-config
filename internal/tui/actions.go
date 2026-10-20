@@ -55,7 +55,11 @@ func (m *Model) applyTheme(t *ghostty.Theme) bool {
 	case disabled > 0:
 		m.warn("Applied %s · disabled %d colour line(s) in your config that overrode it (commented out, backup kept)", t.Name, disabled)
 	case m.setting.Pair:
-		m.info("Applied %s as the %s half of your light/dark pair", t.Name, styleWord(t))
+		format := "Applied %s as the light half of your light/dark pair"
+		if styleWord(t) == "dark" {
+			format = "Applied %s as the dark half of your light/dark pair"
+		}
+		m.info(format, t.Name)
 	default:
 		m.info("Applied %s — written to %s; %s", t.Name, filepath.Base(m.tree.Primary.Path), m.reloadWord())
 	}
@@ -251,16 +255,16 @@ func (m *Model) deleteThemes(ts []*ghostty.Theme) {
 		}
 		return
 	}
-	what := fmt.Sprintf("%d themes", len(doomed))
-	if len(doomed) == 1 {
-		what = doomed[0].Name
+	what := doomed[0].Name
+	if len(doomed) != 1 {
+		what = m.tf("%d themes", len(doomed))
 	}
-	question := fmt.Sprintf("Delete %s? This cannot be undone.", what)
+	question := m.tf("Delete %s? This cannot be undone.", what)
 	if foreign {
-		question = fmt.Sprintf("Delete %s? It was not written by this tool. This cannot be undone.", what)
+		question = m.tf("Delete %s? It was not written by this tool. This cannot be undone.", what)
 	}
 	if applied {
-		question += " The configured theme is among them: choose another afterwards."
+		question += m.t(" The configured theme is among them: choose another afterwards.")
 	}
 	m.openConfirm(question, func(m *Model) tea.Cmd {
 		removed := 0
@@ -444,7 +448,7 @@ func (m *Model) renderStatus() {
 		return
 	}
 	var b strings.Builder
-	b.WriteString(m.cur.Name + "  ·  " + sourceWord(m.cur))
+	b.WriteString(m.cur.Name + "  ·  " + m.t(sourceWord(m.cur)))
 	b.WriteString("  ·  font " + orDash(m.fontFamily) + " " + ghostty.FormatSize(m.fontSize))
 	m.status, m.statusKind = b.String(), statusPlain
 }

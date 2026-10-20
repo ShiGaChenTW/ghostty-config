@@ -18,6 +18,9 @@ type State struct {
 	// Interface is the colour scheme of the editor's own chrome, kept apart
 	// from the theme being looked at: "clear", "paper", "graphite" or "theme".
 	Interface string `json:"interface,omitempty"`
+	// Language is the editor's own language, "en" or "zh-Hant". Empty means
+	// English. It is not Ghostty's language and it is not read from LANG.
+	Language string `json:"language,omitempty"`
 	// UpdateCheckedAt and LatestRelease remember the last look at GitHub,
 	// so the network is asked at most once a day.
 	UpdateCheckedAt time.Time `json:"update_checked_at,omitempty"`

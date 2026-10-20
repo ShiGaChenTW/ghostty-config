@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"fmt"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -139,16 +138,16 @@ func presetCommand() *command {
 			if p == nil {
 				return nil
 			}
-			lines := []string{c.bold(c.fg).Render(truncate("Preset "+p.name, width))}
-			lines = append(lines, para(c.mutedS(), p.detail+".", width)...)
+			lines := []string{c.bold(c.fg).Render(truncate(m.tf("Preset %s", p.name), width))}
+			lines = append(lines, para(c.mutedS(), m.sentence(p.detail), width)...)
 			changes := m.presetChanges(*p)
 			if len(changes) == 0 {
-				return append(lines, c.text(c.ok).Render("Already in place"))
+				return append(lines, c.text(c.ok).Render(m.t("Already in place")))
 			}
-			lines = append(lines, c.mutedS().Render(fmt.Sprintf("Enter changes %d setting(s):", len(changes))))
+			lines = append(lines, c.mutedS().Render(m.tf("Enter changes %d setting(s):", len(changes))))
 			for _, ch := range changes {
-				lines = append(lines, truncate(c.bold(c.fg).Render(pad(ch[0], 26))+c.mutedS().Render(ch[1]+" → ")+settingValueStyle(c, ch[2]).Bold(true).Render(ch[2]), width))
-				lines = append(lines, para(c.mutedS(), "  "+ch[3]+".", width)...)
+				lines = append(lines, truncate(c.bold(c.fg).Render(pad(m.t(ch[0]), 26))+c.mutedS().Render(ch[1]+" → ")+settingValueStyle(c, ch[2]).Bold(true).Render(ch[2]), width))
+				lines = append(lines, para(c.mutedS(), "  "+m.sentence(ch[3]), width)...)
 			}
 			return lines
 		},

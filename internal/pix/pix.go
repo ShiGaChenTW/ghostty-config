@@ -266,6 +266,10 @@ func runs(f font.Face, s string) []run {
 		if r > 127 && !kimg.Covers(f, r) {
 			if m := kimg.MonoOf(f); kimg.Covers(m, r) {
 				g = m
+			} else if cjk := kimg.CJKFor(f); cjk != nil && kimg.CJKCovers(r) {
+				g = cjk
+			} else if sys := kimg.SystemCJK(f); sys != nil && kimg.SystemCJKCovers(r) {
+				g = sys
 			} else if sub, ok := substitutes[r]; ok && sub != string(r) {
 				text = sub
 			} else {
@@ -329,26 +333,55 @@ func (c *Canvas) Fit(f font.Face, s string, w float32) string {
 	return strings.TrimRight(string(r[:lo]), " ") + "…"
 }
 
-// Wrap breaks text into lines no wider than w.
+// Wrap breaks text into lines no wider than w. A word is split only when
+// that word itself is wider than the line, so spaced English stays as it was.
 func (c *Canvas) Wrap(f font.Face, text string, w float32) []string {
 	var out []string
 	for _, para := range strings.Split(text, "\n") {
 		line := ""
 		for _, word := range strings.Fields(para) {
-			try := word
-			if line != "" {
-				try = line + " " + word
+			parts := []string{word}
+			if c.Width(f, word) > w {
+				parts = c.splitWide(f, word, w)
 			}
-			if line != "" && c.Width(f, try) > w {
-				out = append(out, line)
-				line = word
-				continue
+			for _, part := range parts {
+				try := part
+				if line != "" {
+					try = line + " " + part
+				}
+				if line != "" && c.Width(f, try) > w {
+					out = append(out, line)
+					line = part
+					continue
+				}
+				line = try
 			}
-			line = try
 		}
 		out = append(out, line)
 	}
 	return out
+}
+
+// splitWide cuts a word by runes so each piece fits in w. A single rune that
+// is itself too wide is kept, because there is nothing smaller to cut to.
+func (c *Canvas) splitWide(f font.Face, word string, w float32) []string {
+	var parts []string
+	var b strings.Builder
+	for _, r := range word {
+		next := b.String() + string(r)
+		if b.Len() > 0 && c.Width(f, next) > w {
+			parts = append(parts, b.String())
+			b.Reset()
+		}
+		b.WriteRune(r)
+	}
+	if b.Len() > 0 {
+		parts = append(parts, b.String())
+	}
+	if len(parts) == 0 {
+		return []string{word}
+	}
+	return parts
 }
 
 // Picture composites another picture with its top left corner at a logical

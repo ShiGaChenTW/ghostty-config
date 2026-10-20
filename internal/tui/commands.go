@@ -126,7 +126,8 @@ func (m *Model) buildCommands() []*command {
 			names := append([]string{"Random"}, color.HarmonyNames...)
 			descs := append([]string{"Anything goes, within reason"}, color.HarmonyDescriptions...)
 			for i, n := range names {
-				if len(words) > 0 && !harmonyMatches(n, words) && !onlyModifiers(words) {
+				zhHit := m.zh() && (strings.Contains(m.t(n), strings.TrimSpace(arg)) || strings.Contains(m.t(descs[i]), strings.TrimSpace(arg)))
+				if len(words) > 0 && !harmonyMatches(n, words) && !onlyModifiers(words) && !zhHit {
 					continue
 				}
 				out = append(out, option{label: n, detail: descs[i], value: strconv.Itoa(i)})
@@ -247,7 +248,7 @@ func (m *Model) buildCommands() []*command {
 			for _, t := range m.lib.Themes {
 				if t.Deletable() {
 					o := m.themeOption(t)
-					o.detail = sourceWord(t)
+					o.detail = m.t(sourceWord(t))
 					out = append(out, o)
 				}
 			}
@@ -465,6 +466,43 @@ func (m *Model) buildCommands() []*command {
 		},
 		preview: previewOverview,
 	})
+	add(&command{name: "language", group: "Tool", syntax: "language en|zh-Hant", desc: "The language of this editor. Ghostty's own menus are separate, and this choice is saved with the editor",
+		options: func(m *Model, arg string) []option {
+			choices := []struct{ value, detail string }{
+				{"en", "English"},
+				{langZh, "繁體中文"},
+			}
+			var out []option
+			for _, c := range choices {
+				if arg != "" && !fuzzyMatch(c.value, strings.TrimSpace(arg)) && !strings.EqualFold(NormalizeLang(arg), c.value) {
+					continue
+				}
+				out = append(out, option{label: c.value, detail: c.detail, value: c.value, current: c.value == m.lang()})
+			}
+			return out
+		},
+		run: func(m *Model, arg string, opt *option) tea.Cmd {
+			raw := ""
+			if opt != nil {
+				raw = opt.value
+			}
+			if strings.TrimSpace(arg) != "" {
+				raw = strings.TrimSpace(arg)
+			}
+			n := NormalizeLang(raw)
+			if n == "" {
+				m.warn("Language is en or zh-Hant")
+				return nil
+			}
+			m.langOverride = ""
+			m.state.Language = n
+			_ = m.state.Save()
+			m.recompute()
+			m.info("Language: %s", n)
+			return nil
+		},
+		preview: previewOverview,
+	})
 	add(&command{name: "overrides", group: "Tool", syntax: "overrides", desc: "Comment out the background/foreground/palette lines in your config that shadow every theme",
 		run: func(m *Model, arg string, opt *option) tea.Cmd {
 			if len(m.overrides) == 0 {
@@ -479,7 +517,7 @@ func (m *Model) buildCommands() []*command {
 		},
 		preview: previewOverridesPanel,
 	})
-	add(&command{name: "collection", group: "Tool", syntax: "collection", desc: fmt.Sprintf("Install or refresh the %d curated themes", len(collection.Collection)),
+	add(&command{name: "collection", group: "Tool", syntax: "collection", desc: "Install or refresh the %d curated themes",
 		run: func(m *Model, arg string, opt *option) tea.Cmd {
 			m.busyText = "Installing the curated collection…"
 			m.overlay = overlayBusy
@@ -573,9 +611,9 @@ func settingCommand(s setting) *command {
 		cmd := s.set(m, v)
 		note := ""
 		if s.note != "" {
-			note = " · " + s.note
+			note = " · " + m.t(s.note)
 		}
-		m.info("%s: %s — written; %s%s", s.label, v, m.reloadWord(), note)
+		m.info("%s: %s — written; %s%s", m.t(s.label), v, m.reloadWord(), note)
 		return tea.Batch(cmd, m.flushWritesCmd())
 	}
 	c.preview = func(m *Model, opt *option, width int) []string { return previewSettingPanel(m, s, opt, width) }
@@ -690,7 +728,7 @@ func (m *Model) themeOption(t *ghostty.Theme) option {
 // reloadWord says whether Ghostty is being reloaded or needs a hand.
 func (m *Model) reloadWord() string {
 	if m.autoReloadWorks() {
-		return "Ghostty reloads"
+		return m.t("Ghostty reloads")
 	}
 	return m.reloadHint()
 }

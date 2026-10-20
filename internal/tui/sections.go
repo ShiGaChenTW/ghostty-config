@@ -40,7 +40,7 @@ var subsections = map[string][][2]string{
 	},
 	"Tool": {
 		{"Ghostty", "reload autoreload"},
-		{"Interface", "interface"},
+		{"Interface", "interface language"},
 		{"Config", "overrides collection backup paths"},
 		{"Help", "help quit"},
 	},

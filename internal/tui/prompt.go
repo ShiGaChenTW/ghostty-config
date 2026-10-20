@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"fmt"
 	"sort"
 	"strconv"
 	"strings"
@@ -84,7 +83,7 @@ func (m *Model) recompute() {
 			needle := strings.TrimSpace(m.arg)
 			var kept []option
 			for _, o := range m.results {
-				if o.header || fuzzyMatch(o.label, needle) {
+				if o.header || fuzzyMatch(o.label, needle) || m.labelHit(o, needle) {
 					kept = append(kept, o)
 				}
 			}
@@ -173,7 +172,7 @@ func (m *Model) menuOptions(filter string) []option {
 		return out
 	}
 	for _, c := range m.commands() {
-		if menuMatches(c, filter) {
+		if m.menuMatches(c, filter) {
 			out = append(out, option{label: title(c.name), detail: c.group, value: c.name, cmd: c})
 		}
 	}
@@ -734,7 +733,7 @@ func (m *Model) installedDownloadables() map[string]bool {
 // installFonts downloads each candidate in turn behind the spinner. One
 // archive failing does not stop the rest; failures are reported at the end.
 func (m *Model) installFonts(candidates []fontdl.FontDownload) tea.Cmd {
-	m.busyText = fmt.Sprintf("Downloading %d font archive(s) from Nerd Fonts…", len(candidates))
+	m.busyText = m.tf("Downloading %d font archive(s) from Nerd Fonts…", len(candidates))
 	m.overlay = overlayBusy
 	catalog := m.fonts
 	return func() tea.Msg {
@@ -769,18 +768,18 @@ func (m *Model) finishInstall(msg installDoneMsg) tea.Cmd {
 	return m.ensureFonts()
 }
 
-// pathsText describes where everything is.
+// pathsText describes where everything is. Headings translate; the paths do not.
 func (m *Model) pathsText() string {
 	var b strings.Builder
-	b.WriteString("Config files Ghostty loads, in order (later wins):\n")
+	b.WriteString(m.t("Config files Ghostty loads, in order (later wins):") + "\n")
 	for _, d := range m.tree.Docs {
 		b.WriteString("  " + d.Path + "\n")
 	}
-	b.WriteString("New keys go to:\n  " + m.tree.Primary.Path + "\n")
-	b.WriteString("Your themes:\n  " + m.paths.ThemesDir + "\n")
-	b.WriteString("Favourites, settings, backups:\n  " + m.paths.StateDir)
+	b.WriteString(m.t("New keys go to:") + "\n  " + m.tree.Primary.Path + "\n")
+	b.WriteString(m.t("Your themes:") + "\n  " + m.paths.ThemesDir + "\n")
+	b.WriteString(m.t("Favourites, settings, backups:") + "\n  " + m.paths.StateDir)
 	if m.paths.Binary != "" {
-		b.WriteString("\nGhostty binary:\n  " + m.paths.Binary)
+		b.WriteString("\n" + m.t("Ghostty binary:") + "\n  " + m.paths.Binary)
 	}
 	return b.String()
 }
@@ -809,7 +808,9 @@ func atoiDefault(s string, def int) int {
 
 // menuMatches keeps the menu filter tight: the command name by prefix or
 // substring, or a word of its description, never a scattered subsequence.
-func menuMatches(c *command, filter string) bool {
+// Traditional also matches the translated description, title and setting label.
+// The English checks are unchanged, including a filter that is empty.
+func (m *Model) menuMatches(c *command, filter string) bool {
 	f := strings.ToLower(strings.TrimSpace(filter))
 	if strings.Contains(c.name, f) {
 		return true
@@ -819,5 +820,27 @@ func menuMatches(c *command, filter string) bool {
 			return true
 		}
 	}
-	return false
+	if !m.zh() {
+		return false
+	}
+	needle := strings.TrimSpace(filter)
+	if needle == "" {
+		return false
+	}
+	if strings.Contains(m.t(c.desc), needle) || strings.Contains(m.t(title(c.name)), needle) {
+		return true
+	}
+	return c.set != nil && strings.Contains(m.t(c.set.label), needle)
+}
+
+// labelHit is the Traditional half of a list filter. Theme names, font names
+// and palette slots stay out of it. English never calls the translations.
+func (m *Model) labelHit(o option, needle string) bool {
+	if !m.zh() || needle == "" || o.theme != nil || o.family != nil || o.slot != "" {
+		return false
+	}
+	if !m.keepsEnglish(o) && strings.Contains(m.t(o.label), needle) {
+		return true
+	}
+	return strings.Contains(m.t(o.detail), needle)
 }

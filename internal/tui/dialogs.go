@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"fmt"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -79,21 +78,21 @@ func (m *Model) viewOverlay(body string) string {
 	case overlayHelp:
 		return m.viewHelp()
 	case overlayConfirm:
-		title = "Confirm"
-		lines = append([]string{""}, wrapLines(m.confirmText, 52, c.base())...)
+		title = m.t("Confirm")
+		lines = append([]string{""}, wrapLines(m.t(m.confirmText), 52, c.base())...)
 		lines = append(lines, "", c.base().Render("  ")+m.confirmButtons(len(lines)+4))
 		width = 58
 	case overlayBusy:
-		title = "Working"
-		lines = []string{"", " " + c.accentS().Render(m.spin.View()) + " " + c.base().Render(m.busyText)}
+		title = m.t("Working")
+		lines = []string{"", " " + c.accentS().Render(m.spin.View()) + " " + c.base().Render(m.t(m.busyText))}
 		width = 66
 	case overlayMessage:
-		title = "Note"
-		lines = append([]string{""}, wrapLines(m.messageText, 70, c.base())...)
-		lines = append(lines, "", c.mutedS().Render("  any key closes"))
+		title = m.t("Note")
+		lines = append([]string{""}, wrapLines(m.t(m.messageText), 70, c.base())...)
+		lines = append(lines, "", c.mutedS().Render(m.t("  any key closes")))
 		width = 76
 	case overlayUpdate:
-		title = "Update available"
+		title = m.t("Update available")
 		lines = append([]string{""}, wrapLines(m.updateText(), 52, c.base())...)
 		lines = append(lines, "", c.base().Render("  ")+m.updateButtons(len(lines)+4))
 		width = 58
@@ -118,11 +117,11 @@ func (m *Model) viewOverlay(body string) string {
 // confirmButtons renders Yes / No and registers them relative to the box.
 func (m *Model) confirmButtons(row int) string {
 	c := m.dialogChrome()
-	yes := " y  yes "
-	no := " n  no "
+	yes := m.t(" y  yes ")
+	no := m.t(" n  no ")
 	m.addRegion(3, row, lipgloss.Width(yes)+2, 1, hitButton, 0, "confirm-yes")
 	m.addRegion(3+lipgloss.Width(yes)+4, row, lipgloss.Width(no)+2, 1, hitButton, 1, "confirm-no")
-	return m.capL(c.accent, c.paint()) + on(c.bg, c.accent).Bold(true).Render(yes) + m.capR(c.accent, c.paint()) + c.base().Render("  ") + m.capL(c.selBg, c.paint()) + on(c.selFg, c.selBg).Render(no) + m.capR(c.selBg, c.paint()) + c.mutedS().Render("   Esc stays")
+	return m.capL(c.accent, c.paint()) + on(c.bg, c.accent).Bold(true).Render(yes) + m.capR(c.accent, c.paint()) + c.base().Render("  ") + m.capL(c.selBg, c.paint()) + on(c.selFg, c.selBg).Render(no) + m.capR(c.selBg, c.paint()) + c.mutedS().Render(m.t("   Esc stays"))
 }
 
 // overlayCentered composes a dialog over the body by replacing the rows it
@@ -158,16 +157,18 @@ func wrapLines(text string, width int, style lipgloss.Style) []string {
 		words := strings.Fields(para)
 		line := ""
 		for _, w := range words {
-			if line == "" {
-				line = w
-				continue
+			for _, piece := range splitByWidth(w, width, lipgloss.Width) {
+				if line == "" {
+					line = piece
+					continue
+				}
+				if lipgloss.Width(line)+1+lipgloss.Width(piece) > width {
+					out = append(out, "  "+style.Render(line))
+					line = piece
+					continue
+				}
+				line += " " + piece
 			}
-			if lipgloss.Width(line)+1+lipgloss.Width(w) > width {
-				out = append(out, "  "+style.Render(line))
-				line = w
-				continue
-			}
-			line += " " + w
 		}
 		out = append(out, "  "+style.Render(line))
 	}
@@ -178,9 +179,9 @@ func wrapLines(text string, width int, style lipgloss.Style) []string {
 func (m *Model) viewHelp() string {
 	c := m.dialogChrome()
 	group := func(title string, pairs ...string) []string {
-		lines := []string{c.bold(c.accent).Render(" " + title)}
+		lines := []string{c.bold(c.accent).Render(" " + m.t(title))}
 		for i := 0; i+1 < len(pairs); i += 2 {
-			lines = append(lines, "  "+c.text(c.warn).Render(pad(pairs[i], 12))+c.base().Render(pairs[i+1]))
+			lines = append(lines, "  "+c.text(c.warn).Render(pad(pairs[i], 12))+c.base().Render(m.t(pairs[i+1])))
 		}
 		return append(lines, "")
 	}
@@ -189,9 +190,9 @@ func (m *Model) viewHelp() string {
 		left = append(left, group(g.title, g.pairs...)...)
 	}
 	var right []string
-	right = append(right, c.bold(c.accent).Render(" Commands"), c.mutedS().Render("  type one, then Enter; Tab completes"), "")
+	right = append(right, c.bold(c.accent).Render(m.t(" Commands")), c.mutedS().Render(m.t("  type one, then Enter; Tab completes")), "")
 	for _, g := range groups {
-		right = append(right, "  "+c.bold(c.fg).Render(g))
+		right = append(right, "  "+c.bold(c.fg).Render(m.t(g)))
 		var names []string
 		for _, cmd := range m.commands() {
 			if cmd.group == g {
@@ -220,7 +221,7 @@ func (m *Model) viewHelp() string {
 	if len(lines)+4 > m.height {
 		lines = lines[:maxInt(1, m.height-4)]
 	}
-	box := m.card("Keys and commands", "any key closes", lines, width)
+	box := m.card(m.t("Keys and commands"), m.t("any key closes"), lines, width)
 	return overlayCentered(m, m.viewMain(), box)
 }
 
@@ -267,7 +268,7 @@ func (m *Model) viewWelcome() string {
 	}
 	add(center(c.bold(c.accent).Render("g h o s t t y   c o n f i g")))
 	add(center(c.faintS().Render(strings.Repeat("─", 30))))
-	add(center(c.mutedS().Render("themes, fonts, the window and extensions for Ghostty, in your terminal's own colours")))
+	add(center(c.mutedS().Render(m.t("themes, fonts, the window and extensions for Ghostty, in your terminal's own colours"))))
 	add("")
 	if m.cur != nil {
 		for _, from := range []int{0, 8} {
@@ -289,13 +290,13 @@ func (m *Model) viewWelcome() string {
 			add("")
 			continue
 		}
-		add(strings.Repeat(" ", indent) + c.bold(c.accent).Render(pad(f[0], 13)) + c.base().Render(pad(f[1], 17)) + c.mutedS().Render(f[2]))
+		add(strings.Repeat(" ", indent) + c.bold(c.accent).Render(pad(f[0], 13)) + c.base().Render(pad(m.t(f[1]), 17)) + c.mutedS().Render(m.t(f[2])))
 	}
 	add("")
-	add(center(c.mutedS().Render(fmt.Sprintf("%d themes · config: %s", len(m.lib.Themes), m.tree.Primary.Path))))
-	add(center(c.mutedS().Render("Looking changes nothing: a theme is applied only when you press Enter on it")))
+	add(center(c.mutedS().Render(m.tf("%d themes · config: %s", len(m.lib.Themes), m.tree.Primary.Path))))
+	add(center(c.mutedS().Render(m.t("Looking changes nothing: a theme is applied only when you press Enter on it"))))
 	add("")
-	add(center(c.bold(c.ok).Render("Enter") + c.mutedS().Render(" to begin")))
+	add(center(c.bold(c.ok).Render("Enter") + c.mutedS().Render(m.t(" to begin"))))
 	for len(lines) < m.height {
 		add("")
 	}
@@ -324,15 +325,15 @@ func welcomeFeatures() [][3]string {
 
 // updateText is what the update dialog says.
 func (m *Model) updateText() string {
-	return fmt.Sprintf("ghostty-config %s is available. You have %s. Install downloads it, checks it and replaces this binary; the new version starts next time.", m.updateLatest, m.opts.Version)
+	return m.tf("ghostty-config %s is available. You have %s. Install downloads it, checks it and replaces this binary; the new version starts next time.", m.updateLatest, m.opts.Version)
 }
 
 // updateButtons renders Install / Next time and registers them relative to
 // the box, like the buttons of a question.
 func (m *Model) updateButtons(row int) string {
 	c := m.dialogChrome()
-	yes := " Enter  install "
-	no := " Esc  next time "
+	yes := m.t(" Enter  install ")
+	no := m.t(" Esc  next time ")
 	m.addRegion(3, row, lipgloss.Width(yes)+2, 1, hitButton, 0, "update-install")
 	m.addRegion(3+lipgloss.Width(yes)+4, row, lipgloss.Width(no)+2, 1, hitButton, 1, "update-later")
 	return m.capL(c.accent, c.paint()) + on(c.bg, c.accent).Bold(true).Render(yes) + m.capR(c.accent, c.paint()) + c.base().Render("  ") + m.capL(c.selBg, c.paint()) + on(c.selFg, c.selBg).Render(no) + m.capR(c.selBg, c.paint())

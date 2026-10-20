@@ -85,11 +85,11 @@ func (m *Model) themeOptions(arg string) []option {
 		case "bundled":
 			label = "Bundled"
 		}
-		word := "themes"
+		detail := m.tf("%d themes, dark to light", len(themes))
 		if len(themes) == 1 {
-			word = "theme"
+			detail = m.tf("%d theme, dark to light", len(themes))
 		}
-		out = append(out, option{label: label, detail: fmt.Sprintf("%d %s, dark to light", len(themes), word), header: true})
+		out = append(out, option{label: label, detail: detail, header: true})
 		for _, t := range themes {
 			out = append(out, m.themeOption(t))
 		}
@@ -252,7 +252,7 @@ func (m *Model) gridJumpGroup(dir int) tea.Cmd {
 // the cards on screen are drawn, so only their pictures are ever sent.
 func (m *Model) viewGallery(ui chrome, l layout) []string {
 	if len(m.results) == 0 {
-		return []string{ui.mutedS().Render(truncate("nothing matches — Esc clears", l.mainW))}
+		return []string{ui.mutedS().Render(truncate(m.t("nothing matches — Esc clears"), l.mainW))}
 	}
 	items, total := m.galleryLayout(l.cols)
 	viewH := l.bodyH
@@ -301,7 +301,7 @@ func (m *Model) viewGallery(ui chrome, l layout) []string {
 		selected := i == m.sel.cursor
 		switch it.kind {
 		case galHead:
-			whole[it.y-top] = ui.bold(ui.fg).Render(o.label) + ui.mutedS().Render("  "+o.detail)
+			whole[it.y-top] = ui.bold(ui.fg).Render(m.t(o.label)) + ui.mutedS().Render("  "+o.detail)
 		case galRow:
 			whole[it.y-top] = m.listRow(ui, o, selected, minInt(l.mainW, 72))
 			m.addRegion(l.mainX, l.bodyY+it.y-top, minInt(l.mainW, 72), 1, hitResult, i, "")
@@ -416,7 +416,7 @@ func tileCells(t *ghostty.Theme) []string {
 func (m *Model) viewFamilyRail(ui chrome, l layout) []string {
 	w := l.railW
 	line := func(label, count string, st lipgloss.Style) string {
-		label = truncate(label, w-2)
+		label = truncate(m.t(label), w-2)
 		gap := w - 2 - lipgloss.Width(label) - lipgloss.Width(count)
 		if gap < 1 {
 			count, gap = "", maxInt(w-2-lipgloss.Width(label), 0)

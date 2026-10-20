@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"fmt"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -47,21 +46,21 @@ func (m *Model) countWord() string {
 	}
 	switch {
 	case m.editing:
-		return "22 slots"
+		return m.t("22 slots")
 	case m.cmd == nil && strings.TrimSpace(m.prompt.Value()) == "":
-		return fmt.Sprintf("%d commands", n)
+		return m.tf("%d commands", n)
 	case m.cmd != nil && m.cmd.options == nil:
-		return "Enter runs it"
+		return m.t("Enter runs it")
 	case m.cmd != nil && m.cmd.name == "theme":
-		return fmt.Sprintf("%d of %d", n, len(m.lib.Themes))
+		return m.tf("%d of %d", n, len(m.lib.Themes))
 	case m.cmd == nil && n > 0:
-		return fmt.Sprintf("%d in all sections", n)
+		return m.tf("%d in all sections", n)
 	case n == 0:
-		return "nothing matches"
+		return m.t("nothing matches")
 	case n == 1:
-		return "1 match"
+		return m.t("1 match")
 	}
-	return fmt.Sprintf("%d matches", n)
+	return m.tf("%d matches", n)
 }
 
 // slotLabel names a slot with its section, as the edit list does.
@@ -95,7 +94,7 @@ func (m *Model) detailStyled(p chrome, width int) []string {
 	if o := m.selected(); o != nil && o.cmd != nil {
 		return m.detailCommand(o.cmd, width)
 	}
-	return []string{m.c.mutedS().Render("No command matches.")}
+	return []string{m.c.mutedS().Render(m.t("No command matches."))}
 }
 
 // detailCommand describes a command of the menu: what to type, what it
@@ -103,9 +102,9 @@ func (m *Model) detailStyled(p chrome, width int) []string {
 func (m *Model) detailCommand(cmd *command, width int) []string {
 	c := m.c
 	lines := wrapSyntax(c.bold(c.fg), title(cmd.syntax), width)
-	lines = append(lines, para(c.mutedS(), cmd.desc+".", width)...)
+	lines = append(lines, para(c.mutedS(), m.commandSentence(cmd), width)...)
 	if cmd.adjust {
-		lines = append(lines, "", truncate(c.base().Render("←→")+c.mutedS().Render(" change it here   ")+c.base().Render("Enter")+c.mutedS().Render(" every value"), width))
+		lines = append(lines, "", truncate(c.base().Render("←→")+c.mutedS().Render(m.t(" change it here   "))+c.base().Render("Enter")+c.mutedS().Render(m.t(" every value")), width))
 	}
 	if cmd.group == "Window" {
 		if pic := m.windowPicture(width, "", nil); pic != nil {
@@ -119,7 +118,7 @@ func (m *Model) detailEditing(width int) []string {
 	c := m.c
 	v := m.cur.Colors[m.editKey]
 	lines := []string{c.base().Render(truncate(color.Describe(v, m.cur.Background(), m.editKey != "background"), width))}
-	lines = append(lines, para(c.mutedS(), "The terminal behind shows every change as you make it. Nothing is written until you save.", width)...)
+	lines = append(lines, para(c.mutedS(), m.t("The terminal behind shows every change as you make it. Nothing is written until you save."), width)...)
 	return lines
 }
 
@@ -135,11 +134,13 @@ func (m *Model) currentValueOf(cmd *command) string {
 	case "size":
 		return ghostty.FormatSize(m.fontSize) + " pt"
 	case "favs":
-		return fmt.Sprintf("%d starred", m.state.FavoriteCount())
+		return m.tf("%d starred", m.state.FavoriteCount())
 	case "edit":
-		return "22 slots"
+		return m.t("22 slots")
 	case "interface":
 		return m.interfaceName()
+	case "language":
+		return m.lang()
 	case "shader":
 		if _, name := m.shaderNow(); name != "" {
 			return name
@@ -152,7 +153,7 @@ func (m *Model) currentValueOf(cmd *command) string {
 				n++
 			}
 		}
-		return fmt.Sprintf("%d of %d installed", n, len(extensions.Packs))
+		return m.tf("%d of %d installed", n, len(extensions.Packs))
 	case "autoreload":
 		if m.state.AutoReloadEnabled() {
 			return "on"
@@ -162,12 +163,12 @@ func (m *Model) currentValueOf(cmd *command) string {
 		if len(m.overrides) == 0 {
 			return "none"
 		}
-		return fmt.Sprintf("%d in your config", len(m.overrides))
+		return m.tf("%d in your config", len(m.overrides))
 	case "collection":
-		return fmt.Sprintf("%d themes", len(collection.Collection))
+		return m.tf("%d themes", len(collection.Collection))
 	case "save", "undo":
 		if m.dirty {
-			return "unsaved edits"
+			return m.t("unsaved edits")
 		}
 		return ""
 	}
@@ -179,7 +180,9 @@ func (m *Model) currentValueOf(cmd *command) string {
 	return ""
 }
 
-// wrapPlain breaks plain text into lines of at most width cells.
+// wrapPlain breaks plain text into lines of at most width cells. A word is
+// split only when that word itself is wider than the line, so spaced English
+// stays as it was.
 func wrapPlain(text string, width int) []string {
 	if width < 8 {
 		width = 8
@@ -188,19 +191,46 @@ func wrapPlain(text string, width int) []string {
 	for _, paragraph := range strings.Split(text, "\n") {
 		line := ""
 		for _, w := range strings.Fields(paragraph) {
-			switch {
-			case line == "":
-				line = w
-			case lipgloss.Width(line)+1+lipgloss.Width(w) > width:
-				out = append(out, line)
-				line = w
-			default:
-				line += " " + w
+			for _, piece := range splitByWidth(w, width, lipgloss.Width) {
+				switch {
+				case line == "":
+					line = piece
+				case lipgloss.Width(line)+1+lipgloss.Width(piece) > width:
+					out = append(out, line)
+					line = piece
+				default:
+					line += " " + piece
+				}
 			}
 		}
 		out = append(out, line)
 	}
 	return out
+}
+
+// splitByWidth returns word in one piece when it fits, or cuts it by runes
+// when it does not.
+func splitByWidth(word string, limit int, width func(string) int) []string {
+	if width(word) <= limit {
+		return []string{word}
+	}
+	var parts []string
+	var b strings.Builder
+	for _, r := range word {
+		next := b.String() + string(r)
+		if b.Len() > 0 && width(next) > limit {
+			parts = append(parts, b.String())
+			b.Reset()
+		}
+		b.WriteRune(r)
+	}
+	if b.Len() > 0 {
+		parts = append(parts, b.String())
+	}
+	if len(parts) == 0 {
+		return []string{word}
+	}
+	return parts
 }
 
 // para renders wrapped text in one style.
@@ -232,12 +262,12 @@ func previewThemeCurrent(m *Model, opt *option, width int) []string {
 		return nil
 	}
 	c := m.c
-	lines := []string{truncate(c.bold(c.fg).Render(m.cur.Name)+c.mutedS().Render("  "+sourceWord(m.cur)), width)}
+	lines := []string{truncate(c.bold(c.fg).Render(m.cur.Name)+c.mutedS().Render("  "+m.t(sourceWord(m.cur))), width)}
 	if m.cmd != nil {
-		lines = append(lines, para(c.mutedS(), m.cmd.desc+".", width)...)
+		lines = append(lines, para(c.mutedS(), m.commandSentence(m.cmd), width)...)
 	}
 	if m.dirty {
-		lines = append(lines, para(c.text(c.warn), "Unsaved edits: save [name] keeps them, undo drops them.", width)...)
+		lines = append(lines, para(c.text(c.warn), m.t("Unsaved edits: save [name] keeps them, undo drops them."), width)...)
 	}
 	return lines
 }
@@ -247,14 +277,14 @@ func previewNewPanel(m *Model, opt *option, width int) []string {
 	c := m.c
 	var lines []string
 	if m.cur != nil && m.cur.Source == ghostty.SourceDraft {
-		lines = append(lines, truncate(c.bold(c.fg).Render(m.cur.Name)+c.text(c.warn).Render("  draft, shown behind"), width))
-		lines = append(lines, para(c.mutedS(), "Enter makes another. save <name> keeps it, undo goes back.", width)...)
+		lines = append(lines, truncate(c.bold(c.fg).Render(m.cur.Name)+c.text(c.warn).Render(m.t("  draft, shown behind")), width))
+		lines = append(lines, para(c.mutedS(), m.t("Enter makes another. save <name> keeps it, undo goes back."), width)...)
 		return lines
 	}
 	if opt != nil {
-		lines = append(lines, truncate(c.bold(c.fg).Render(opt.label)+c.mutedS().Render("  "+opt.detail), width))
+		lines = append(lines, truncate(c.bold(c.fg).Render(m.t(opt.label))+c.mutedS().Render("  "+m.t(opt.detail)), width))
 	}
-	lines = append(lines, para(c.mutedS(), "Enter generates it and shows it behind. Add light or dark, or a #hex colour to seed the hue. Every colour is held at 4.5:1 or better.", width)...)
+	lines = append(lines, para(c.mutedS(), m.t("Enter generates it and shows it behind. Add light or dark, or a #hex colour to seed the hue. Every colour is held at 4.5:1 or better."), width)...)
 	return lines
 }
 
@@ -265,12 +295,12 @@ func previewPalettePanel(m *Model, opt *option, width int) []string {
 	if opt != nil && opt.slot != "" {
 		v := m.cur.Colors[opt.slot]
 		if v == "" {
-			lines = append(lines, c.base().Render(opt.label)+c.mutedS().Render("  not set; Ghostty picks its own"))
+			lines = append(lines, c.base().Render(opt.label)+c.mutedS().Render(m.t("  not set; Ghostty picks its own")))
 		} else {
 			lines = append(lines, c.base().Render(truncate(color.Describe(v, m.cur.Background(), opt.slot != "background"), width)))
 		}
 	}
-	lines = append(lines, para(c.mutedS(), "Enter opens the slot editor: arrows nudge it, or type a hex. edit red #ff5555 sets it outright.", width)...)
+	lines = append(lines, para(c.mutedS(), m.t("Enter opens the slot editor: arrows nudge it, or type a hex. edit red #ff5555 sets it outright."), width)...)
 	return lines
 }
 
@@ -279,8 +309,8 @@ func previewPalettePanel(m *Model, opt *option, width int) []string {
 func previewSettingPanel(m *Model, s setting, opt *option, width int) []string {
 	c := m.c
 	lines := []string{
-		c.bold(c.fg).Render(truncate(s.label, width)),
-		truncate(c.mutedS().Render(s.key+"  ·  now ")+c.base().Render(s.get(m)), width),
+		c.bold(c.fg).Render(truncate(m.t(s.label), width)),
+		truncate(c.mutedS().Render(s.key+m.t("  ·  now "))+c.base().Render(s.get(m)), width),
 		"",
 	}
 	explain := s.explain
@@ -288,12 +318,16 @@ func previewSettingPanel(m *Model, s setting, opt *option, width int) []string {
 		explain = valueNotes[s.cmd]
 	}
 	if explain != nil && opt != nil && explain[opt.value] != "" {
-		lines = append(lines, m.entry(opt.value, explain[opt.value]+".", len([]rune(opt.value))+2, width, c.base())...)
+		lines = append(lines, m.entry(opt.value, m.sentence(explain[opt.value]), len([]rune(opt.value))+2, width, c.base())...)
 	} else {
-		lines = append(lines, para(c.mutedS(), s.detail+".", width)...)
+		lines = append(lines, para(c.mutedS(), m.sentence(s.detail), width)...)
 	}
-	if s.note != "" {
-		lines = append(lines, c.text(c.warn).Render(truncate(s.note, width)))
+	note := s.note
+	if got := m.t(s.note); got != s.note {
+		note = got
+	}
+	if note != "" {
+		lines = append(lines, c.text(c.warn).Render(truncate(note, width)))
 	}
 	if s.group == "Window" {
 		if pic := m.windowPicture(width, s.cmd, opt); pic != nil {
@@ -310,14 +344,14 @@ func previewOverview(m *Model, opt *option, width int) []string {
 		return nil
 	}
 	lines := []string{c.bold(c.fg).Render(truncate(title(m.cmd.syntax), width))}
-	return append(lines, para(c.mutedS(), m.cmd.desc+".", width)...)
+	return append(lines, para(c.mutedS(), m.commandSentence(m.cmd), width)...)
 }
 
 // previewOverridesPanel lists the offending lines.
 func previewOverridesPanel(m *Model, opt *option, width int) []string {
 	c := m.c
 	if len(m.overrides) == 0 {
-		return append([]string{c.text(c.ok).Render("No colour line in your config overrides the theme.")}, para(c.mutedS(), "Ghostty applies background, foreground and palette lines from your config on top of any theme.", width)...)
+		return append([]string{c.text(c.ok).Render(m.t("No colour line in your config overrides the theme."))}, para(c.mutedS(), m.t("Ghostty applies background, foreground and palette lines from your config on top of any theme."), width)...)
 	}
 	var lines []string
 	for _, e := range m.overrides {

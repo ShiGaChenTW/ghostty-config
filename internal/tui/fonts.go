@@ -82,7 +82,7 @@ func (m *Model) fontOptions(arg string) []option {
 		out = append(out, option{label: d.Name, detail: "download", value: downloadPrefix + d.Archive})
 	}
 	if titled && len(missing) > 1 {
-		out = append(out, option{label: fmt.Sprintf("All %d of them", len(missing)), detail: "one after another", value: downloadPrefix + "*"})
+		out = append(out, option{label: m.tf("All %d of them", len(missing)), detail: "one after another", value: downloadPrefix + "*"})
 	}
 	return out
 }

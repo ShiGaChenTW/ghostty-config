@@ -208,7 +208,7 @@ func (m *Model) pxHeader(c *pix.Canvas, p pxPal, f pxFonts, g pxGeo) {
 	navX := g.M
 	navW := float32(0)
 	for _, name := range groups {
-		navW += c.Width(f.nav, name) + 24
+		navW += c.Width(f.nav, m.t(name)) + 24
 	}
 	if g.M+170+navW < fieldX-16 {
 		c.Text(f.title, g.M, base, "ghostty-config", p.fg)
@@ -217,15 +217,16 @@ func (m *Model) pxHeader(c *pix.Canvas, p pxPal, f pxFonts, g pxGeo) {
 	searching := m.cmd == nil && strings.TrimSpace(m.prompt.Value()) != ""
 	x := navX
 	for i, name := range groups {
-		w := c.Width(f.nav, name)
+		label := m.t(name)
+		w := c.Width(f.nav, label)
 		if x+w > fieldX-12 {
 			break
 		}
 		if i == m.group && !searching {
-			c.Text(f.navB, x, base, name, p.fg)
-			c.Rect(x, g.T+33, c.Width(f.navB, name), 2, 1, p.accent)
+			c.Text(f.navB, x, base, label, p.fg)
+			c.Rect(x, g.T+33, c.Width(f.navB, label), 2, 1, p.accent)
 		} else {
-			c.Text(f.nav, x, base, name, p.muted)
+			c.Text(f.nav, x, base, label, p.muted)
 		}
 		m.pxRegion(c, x-6, g.T, w+12, 36, hitGroup, i, name)
 		x += w + 24
@@ -273,11 +274,11 @@ func (m *Model) pxHeader(c *pix.Canvas, p pxPal, f pxFonts, g pxGeo) {
 		pos = m.prompt.Position()
 	}
 	if value == "" {
-		ph := "Search " + itoa(len(m.commands())) + " options"
+		ph := m.tf("Search %d options", len(m.commands()))
 		if m.cmd != nil && m.cmd.name == "theme" {
-			ph = "Search " + itoa(len(m.lib.Themes)) + " themes"
+			ph = m.tf("Search %d themes", len(m.lib.Themes))
 		} else if m.cmd != nil {
-			ph = "filter"
+			ph = m.t("filter")
 		}
 		c.Rect(tx-1, fy+9, 1.5, 16, 0, p.accent)
 		c.Text(f.small, tx+3, tb, c.Fit(f.small, ph, room), p.muted)
@@ -326,7 +327,7 @@ func (m *Model) pxRail(c *pix.Canvas, p pxPal, f pxFonts, g pxGeo, title string,
 	if g.railW == 0 {
 		return
 	}
-	pxCaps(c, f.caps, g.railX+10, g.T+76, title, p.muted)
+	pxCaps(c, f.caps, g.railX+10, g.T+76, m.t(title), p.muted)
 	y := g.T + 88
 	// The first pinned lines stay; the rest scroll to keep the active one
 	// on screen when the list is long.
@@ -362,8 +363,9 @@ func (m *Model) pxRail(c *pix.Canvas, p pxPal, f pxFonts, g pxGeo, title string,
 		if it.active {
 			face, col = f.rowB, p.fg
 		}
+		shown := m.t(it.label)
 		cw := c.Width(f.small, it.count)
-		c.Text(face, lx, mid(y, 28, 13.5), c.Fit(face, it.label, g.railW-(lx-g.railX)-cw-20), col)
+		c.Text(face, lx, mid(y, 28, 13.5), c.Fit(face, shown, g.railW-(lx-g.railX)-cw-20), col)
 		c.Text(f.small, g.railX+g.railW-10-cw, mid(y, 28, 12), it.count, p.muted)
 		if it.kind != hitNone {
 			m.pxRegion(c, g.railX, y, g.railW, 28, it.kind, it.index, it.name)
@@ -407,7 +409,7 @@ func (m *Model) pxGallery(c *pix.Canvas, p pxPal, f pxFonts, g pxGeo) {
 	m.pxRail(c, p, f, g, "Families", items, maxInt(cur, 2), 2)
 
 	if len(m.results) == 0 {
-		c.Text(f.body, g.bodyX, g.bodyY+20, "Nothing matches — Esc clears", p.muted)
+		c.Text(f.body, g.bodyX, g.bodyY+20, m.t("Nothing matches — Esc clears"), p.muted)
 		return
 	}
 
@@ -524,11 +526,14 @@ func (m *Model) pxGallery(c *pix.Canvas, p pxPal, f pxFonts, g pxGeo) {
 		o := m.results[i]
 		switch s.kind {
 		case galHead:
-			w := c.Text(f.h1, g.bodyX, top+21, o.label, p.fg)
+			label := m.t(o.label)
+			w := c.Text(f.h1, g.bodyX, top+21, label, p.fg)
 			c.Text(f.body, g.bodyX+w+12, top+21, o.detail, p.muted)
 		case galRow:
-			c.Text(f.row, g.bodyX, top+20, o.label, p.fg)
-			c.Text(f.small, g.bodyX+c.Width(f.row, o.label)+12, top+20, o.detail, p.muted)
+			label := m.shownLabel(o)
+			detail := m.shownDetail(o)
+			c.Text(f.row, g.bodyX, top+20, label, p.fg)
+			c.Text(f.small, g.bodyX+c.Width(f.row, label)+12, top+20, detail, p.muted)
 			m.pxRegion(c, g.bodyX, top, g.bodyW, 32, hitResult, i, "")
 		case galTile:
 			x := g.bodyX + s.x
@@ -573,7 +578,7 @@ func (m *Model) pxCard(c *pix.Canvas, p pxPal, f pxFonts, t *ghostty.Theme, x, y
 	}
 
 	if t.Name == m.applied {
-		label := "Applied"
+		label := m.t("Applied")
 		lw := c.Width(f.small, label) * 0.86
 		c.Rect(x+w-9-lw-14, y+9, lw+14, 18, 9, pix.Hex(sp.FG, 0.14))
 		c.Text(c.Face(false, false, 10.5), x+w-9-lw-7, mid(y+9, 18, 10.5), label, fg)
@@ -685,7 +690,7 @@ func (m *Model) pxMenu(c *pix.Canvas, p pxPal, f pxFonts, g pxGeo) {
 	}
 
 	if len(m.results) == 0 {
-		c.Text(f.body, g.bodyX+14, g.bodyY+20, "Nothing matches — Esc clears", p.muted)
+		c.Text(f.body, g.bodyX+14, g.bodyY+20, m.t("Nothing matches — Esc clears"), p.muted)
 		return
 	}
 	m.pxScrollList(spots, total, g)
@@ -697,7 +702,7 @@ func (m *Model) pxMenu(c *pix.Canvas, p pxPal, f pxFonts, g pxGeo) {
 		if s.head != "" {
 			hy := g.bodyY + s.headY - e.listTop
 			if hy >= g.bodyY-0.5 && hy+headH+rowH <= g.viewEnd+0.5 {
-				c.Text(f.h2, g.bodyX+14, mid(hy, headH, 15), s.head, p.fg)
+				c.Text(f.h2, g.bodyX+14, mid(hy, headH, 15), m.t(s.head), p.fg)
 			}
 		}
 		if o.header || s.h == 0 {
@@ -791,10 +796,13 @@ func (m *Model) pxMenuRow(c *pix.Canvas, p pxPal, f pxFonts, o option, idx int, 
 	label := o.label
 	if s != nil {
 		label = s.label
-		// Under a title that already names it, the setting is its style.
+		// Compare the English names, then translate what is drawn.
 		if sub, _ := subOf(o.cmd); sub == label {
 			label = "Style"
 		}
+	}
+	if s != nil || !m.keepsEnglish(o) {
+		label = m.t(label)
 	}
 	right := x + w - 12
 	base := mid(y, rowH, 14)
@@ -806,6 +814,9 @@ func (m *Model) pxMenuRow(c *pix.Canvas, p pxPal, f pxFonts, o option, idx int, 
 		c.Line(right+3, y+rowH/2-4, right+7, y+rowH/2, 1.4, p.muted)
 		c.Line(right+7, y+rowH/2, right+3, y+rowH/2+4, 1.4, p.muted)
 		v := o.detail
+		if o.theme == nil {
+			v = m.shownDetail(o)
+		}
 		vx := right - 8
 		if o.theme != nil {
 			pxSwatch(c, o.theme, vx-22, y+8, 22)
@@ -917,10 +928,16 @@ func (m *Model) pxCommandSide(c *pix.Canvas, p pxPal, f pxFonts, cmd *command, o
 	defer c.Unclip()
 	s := cmd.set
 	if s == nil {
-		c.Text(f.h3, x, y+20, title(cmd.name), p.fg)
+		name := title(cmd.name)
+		if m.zh() && cmd.set != nil {
+			name = m.t(cmd.set.label)
+		} else {
+			name = m.t(name)
+		}
+		c.Text(f.h3, x, y+20, name, p.fg)
 		c.Text(f.mono, x, y+46, c.Fit(f.mono, cmd.syntax, w), p.muted)
 		yy := y + 78
-		for _, line := range c.Wrap(f.body, cmd.desc+".", w-12) {
+		for _, line := range c.Wrap(f.body, m.commandSentence(cmd), w-12) {
 			c.Text(f.body, x, yy, line, p.text2)
 			yy += 21
 		}
@@ -941,11 +958,11 @@ func (m *Model) pxCommandSide(c *pix.Canvas, p pxPal, f pxFonts, cmd *command, o
 		m.pxWindowPicture(c, p, s.cmd, value, x, yy, w, ph)
 		yy += ph + 22
 	}
-	c.Text(f.h3, x, yy+18, s.label, p.fg)
+	c.Text(f.h3, x, yy+18, m.t(s.label), p.fg)
 	yy += 30
 	kx := x + c.Text(f.mono, x, yy+14, s.key, p.muted)
 	if s.fallback != "" {
-		c.Text(f.small, kx+10, yy+14, "· default "+displayValue(s.fallback), p.muted)
+		c.Text(f.small, kx+10, yy+14, m.t("· default ")+displayValue(s.fallback), p.muted)
 	}
 	yy += 34
 
@@ -961,6 +978,13 @@ func (m *Model) pxCommandSide(c *pix.Canvas, p pxPal, f pxFonts, cmd *command, o
 			text = strings.ToLower(text[:1]) + text[1:]
 		}
 	}
+	raw := s.detail
+	if explain != nil && explain[value] != "" {
+		raw = explain[value]
+	}
+	if got := m.t(raw); got != raw {
+		lead, text = "", got
+	}
 	first := true
 	for _, line := range c.Wrap(f.body, strings.TrimSpace(lead+" "+text), w-12) {
 		lx := x
@@ -975,16 +999,19 @@ func (m *Model) pxCommandSide(c *pix.Canvas, p pxPal, f pxFonts, cmd *command, o
 	if s.note != "" {
 		yy += 10
 		note := strings.ToUpper(s.note[:1]) + s.note[1:]
+		if got := m.t(s.note); got != s.note {
+			note = got
+		}
 		nw := c.Width(f.small, note)
 		c.Rect(x, yy, nw+20, 24, 12, p.railSel)
 		c.Text(f.small, x+10, mid(yy, 24, 12), note, p.text2)
 		yy += 24
 	}
 	yy += 26
-	pxCaps(c, f.caps, x, yy+10, "Will write", p.muted)
+	pxCaps(c, f.caps, x, yy+10, m.t("Will write"), p.muted)
 	yy += 20
 	if strings.EqualFold(value, s.fallback) {
-		c.Text(f.mono, x, yy+14, "# "+s.key+" removed: Ghostty's default", p.muted)
+		c.Text(f.mono, x, yy+14, m.tf("# %s removed: Ghostty's default", s.key), p.muted)
 	} else {
 		px := c.Text(f.mono, x, yy+14, "+ ", p.accent)
 		c.Text(f.mono, x+px, yy+14, c.Fit(f.mono, s.key+" = "+value, w-px), p.fg)
@@ -1026,7 +1053,11 @@ func (m *Model) pxOptions(c *pix.Canvas, p pxPal, f pxFonts, g pxGeo) {
 		if cmd == m.cmd {
 			cur = len(items)
 		}
-		items = append(items, railItem{label: title(cmd.name), count: m.currentValueOf(cmd), active: cmd == m.cmd, kind: hitCommand, index: len(items), name: cmd.name, dot: cmd.set != nil && m.changed(cmd.set)})
+		label := title(cmd.name)
+		if m.zh() && cmd.set != nil {
+			label = cmd.set.label
+		}
+		items = append(items, railItem{label: label, count: m.currentValueOf(cmd), active: cmd == m.cmd, kind: hitCommand, index: len(items), name: cmd.name, dot: cmd.set != nil && m.changed(cmd.set)})
 	}
 	m.pxRail(c, p, f, g, groups[m.group], items, cur, 0)
 
@@ -1034,6 +1065,7 @@ func (m *Model) pxOptions(c *pix.Canvas, p pxPal, f pxFonts, g pxGeo) {
 	if m.cmd.set != nil {
 		label = m.cmd.set.label
 	}
+	label = m.t(label)
 	hw := c.Text(f.h1, g.bodyX, g.bodyY+21, label, p.fg)
 	listW := minF(488, g.bodyW*0.52)
 	sideX := g.bodyX + listW + 30
@@ -1041,13 +1073,13 @@ func (m *Model) pxOptions(c *pix.Canvas, p pxPal, f pxFonts, g pxGeo) {
 	if sideW < 260 {
 		listW, sideW = g.bodyW, 0
 	}
-	c.Text(f.body, g.bodyX+hw+12, g.bodyY+21, c.Fit(f.body, m.cmd.desc, listW-hw-12), p.muted)
+	c.Text(f.body, g.bodyX+hw+12, g.bodyY+21, c.Fit(f.body, m.commandDesc(m.cmd), listW-hw-12), p.muted)
 
 	top := g.bodyY + 44
 	if len(m.results) == 0 {
-		msg := "Nothing matches — Esc clears"
+		msg := m.t("Nothing matches — Esc clears")
 		if m.cmd.options == nil {
-			msg = "Enter runs it · Esc goes back"
+			msg = m.t("Enter runs it · Esc goes back")
 		}
 		c.Text(f.body, g.bodyX+14, top+20, msg, p.muted)
 	} else {
@@ -1076,8 +1108,9 @@ func (m *Model) pxOptions(c *pix.Canvas, p pxPal, f pxFonts, g pxGeo) {
 				continue
 			}
 			if o.header {
-				w := c.Text(f.h2, g.bodyX+14, mid(sy, headH, 15), o.label, p.fg)
-				c.Text(f.small, g.bodyX+14+w+10, mid(sy, headH, 12.5), c.Fit(f.small, o.detail, listW-w-40), p.muted)
+				head := m.t(o.label)
+				w := c.Text(f.h2, g.bodyX+14, mid(sy, headH, 15), head, p.fg)
+				c.Text(f.small, g.bodyX+14+w+10, mid(sy, headH, 12.5), c.Fit(f.small, m.shownDetail(o), listW-w-40), p.muted)
 				continue
 			}
 			m.pxOptionRow(c, p, f, o, i == m.sel.cursor, g.bodyX, sy, listW)
@@ -1126,10 +1159,14 @@ func (m *Model) pxOptionRow(c *pix.Canvas, p pxPal, f pxFonts, o option, sel boo
 	label := o.label
 	if m.cmd != nil && m.cmd.set != nil {
 		label = displayValue(label)
+	} else {
+		label = m.shownLabel(o)
 	}
 	detail := o.detail
 	if detail == "current" {
 		detail = ""
+	} else {
+		detail = m.shownDetail(o)
 	}
 	dw := c.Width(f.small, detail)
 	maxD := (w - (lx - x)) * 0.55
@@ -1156,8 +1193,8 @@ func (m *Model) pxEditor(c *pix.Canvas, p pxPal, f pxFonts, g pxGeo) {
 	items = append(items, railItem{label: m.cur.Name, count: "", active: true})
 	m.pxRail(c, p, f, g, "Editing", items, 0, 0)
 
-	hw := c.Text(f.h1, g.bodyX, g.bodyY+21, "Colour slots", p.fg)
-	c.Text(f.body, g.bodyX+hw+12, g.bodyY+21, "the terminal behind shows every change", p.muted)
+	hw := c.Text(f.h1, g.bodyX, g.bodyY+21, m.t("Colour slots"), p.fg)
+	c.Text(f.body, g.bodyX+hw+12, g.bodyY+21, m.t("the terminal behind shows every change"), p.muted)
 	listW := minF(488, g.bodyW*0.52)
 	sideX := g.bodyX + listW + 30
 	sideW := g.W - g.M - sideX
@@ -1194,7 +1231,7 @@ func (m *Model) pxEditor(c *pix.Canvas, p pxPal, f pxFonts, g pxGeo) {
 			face, col = f.rowB, p.fg
 		}
 		c.Text(face, g.bodyX+40, mid(y, 32, 14), slotLabel(k), col)
-		detail := "not set"
+		detail := m.t("not set")
 		if v != "" {
 			detail = v
 			if k != "background" {
@@ -1230,7 +1267,10 @@ func (m *Model) pxFooter(c *pix.Canvas, p pxPal, f pxFonts, g pxGeo) {
 	}
 	right := g.W - g.M
 	if enter != "" {
-		label := strings.ToUpper(enter[:1]) + enter[1:]
+		label := enter
+		if !m.zh() {
+			label = title(enter)
+		}
 		bw := c.Width(f.rowB, label) + 14 + 11 + 28
 		c.Rect(right-bw, cy-16, bw, 32, 8, p.accent)
 		lw := c.Text(c.Face(false, true, 13), right-bw+14, mid(cy-16, 32, 13), label, p.onAccent)
@@ -1250,7 +1290,11 @@ func (m *Model) pxFooter(c *pix.Canvas, p pxPal, f pxFonts, g pxGeo) {
 	var caps []cap
 	for _, k := range keys {
 		kw := pxKeyLabel(c, f.monoS, 0, 0, k[0], p.fg, false) + 14
-		caps = append(caps, cap{k[0], k[1], kw + 6 + c.Width(f.small, title(k[1]))})
+		word := k[1]
+		if !m.zh() {
+			word = title(k[1])
+		}
+		caps = append(caps, cap{k[0], word, kw + 6 + c.Width(f.small, word)})
 	}
 	total := float32(0)
 	n := 0
@@ -1266,7 +1310,7 @@ func (m *Model) pxFooter(c *pix.Canvas, p pxPal, f pxFonts, g pxGeo) {
 		kw := pxKeyLabel(c, f.monoS, 0, 0, k.key, p.fg, false) + 14
 		c.Rect(kx, cy-10, kw, 20, 5, p.keycap)
 		pxKeyLabel(c, f.monoS, kx+7, mid(cy-10, 20, 11.5), k.key, p.fg, true)
-		c.Text(f.small, kx+kw+6, mid(cy-10, 20, 12.5), title(k.word), p.muted)
+		c.Text(f.small, kx+kw+6, mid(cy-10, 20, 12.5), k.word, p.muted)
 		kx += k.w + 16
 	}
 }
@@ -1331,18 +1375,21 @@ func (m *Model) pxFooterInfo(c *pix.Canvas, p pxPal, f pxFonts, g pxGeo, x, cy f
 	}
 	if changed > 0 {
 		pxDot(c, x+3, cy, p.accent)
-		w := c.Text(f.body, x+14, mid(cy-10, 20, 13.5), fmt.Sprintf("%d changed", changed), p.fg)
-		w2 := c.Text(f.small, x+14+w+12, mid(cy-10, 20, 12.5), "each file is backed up before its first change", p.muted)
+		changedText := m.tf("%d changed", changed)
+		w := c.Text(f.body, x+14, mid(cy-10, 20, 13.5), changedText, p.fg)
+		note := m.t("each file is backed up before its first change")
+		w2 := c.Text(f.small, x+14+w+12, mid(cy-10, 20, 12.5), note, p.muted)
 		return x + 14 + w + 12 + w2
 	}
 	applied := m.applied
 	if applied == "" {
-		applied = "no theme set"
+		applied = m.t("no theme set")
 	}
-	w := c.Text(f.small, x, mid(cy-10, 20, 12.5), "applied ", p.muted)
+	prefix := m.t("applied ")
+	w := c.Text(f.small, x, mid(cy-10, 20, 12.5), prefix, p.muted)
 	w += c.Text(f.small, x+w, mid(cy-10, 20, 12.5), applied, p.fg)
 	if m.dirty {
-		w += c.Text(f.small, x+w, mid(cy-10, 20, 12.5), "   unsaved changes", pix.Hex(p.ui.warn, 1))
+		w += c.Text(f.small, x+w, mid(cy-10, 20, 12.5), m.t("   unsaved changes"), pix.Hex(p.ui.warn, 1))
 	}
 	return x + w
 }
@@ -1372,10 +1419,10 @@ func (m *Model) pxOverlay(c *pix.Canvas, p pxPal, f pxFonts, g pxGeo) {
 	switch m.overlay {
 	case overlayConfirm:
 		w := minF(520, g.W-40)
-		lines := c.Wrap(f.body, m.confirmText, w-56)
+		lines := c.Wrap(f.body, m.t(m.confirmText), w-56)
 		h := float32(64+len(lines)*21) + 72
 		x, y := card(w, h)
-		c.Text(f.h3, x+28, y+40, "Confirm", p.fg)
+		c.Text(f.h3, x+28, y+40, m.t("Confirm"), p.fg)
 		yy := y + 70
 		for _, l := range lines {
 			c.Text(f.body, x+28, yy, l, p.text2)
@@ -1383,47 +1430,49 @@ func (m *Model) pxOverlay(c *pix.Canvas, p pxPal, f pxFonts, g pxGeo) {
 		}
 		by := y + h - 52
 		bx := x + 28
-		yes := c.Width(f.rowB, "Yes") + 44
+		yesLabel := m.t("Yes")
+		yes := c.Width(f.rowB, yesLabel) + 44
 		c.Rect(bx, by, yes, 32, 8, p.accent)
-		c.Text(f.rowB, bx+14, mid(by, 32, 14), "Yes", p.onAccent)
+		c.Text(f.rowB, bx+14, mid(by, 32, 14), yesLabel, p.onAccent)
 		c.Text(f.monoS, bx+yes-22, mid(by, 32, 11.5), "y", p.onAccent)
 		m.pxRegion(c, bx, by, yes, 32, hitButton, 0, "confirm-yes")
 		bx += yes + 10
-		no := c.Width(f.row, "No") + 44
+		noLabel := m.t("No")
+		no := c.Width(f.row, noLabel) + 44
 		c.Rect(bx, by, no, 32, 8, p.keycap)
-		c.Text(f.row, bx+14, mid(by, 32, 14), "No", p.fg)
+		c.Text(f.row, bx+14, mid(by, 32, 14), noLabel, p.fg)
 		c.Text(f.monoS, bx+no-22, mid(by, 32, 11.5), "n", p.muted)
 		m.pxRegion(c, bx, by, no, 32, hitButton, 1, "confirm-no")
-		c.Text(f.small, bx+no+16, mid(by, 32, 12.5), "Esc stays", p.muted)
+		c.Text(f.small, bx+no+16, mid(by, 32, 12.5), m.t("Esc stays"), p.muted)
 	case overlayBusy:
 		w := minF(520, g.W-40)
 		x, y := card(w, 110)
-		c.Text(f.h3, x+28, y+40, "Working", p.fg)
+		c.Text(f.h3, x+28, y+40, m.t("Working"), p.fg)
 		sw := c.Text(f.mono, x+28, y+76, ansi.Strip(m.spin.View()), p.accent)
-		c.Text(f.body, x+28+sw+10, y+76, c.Fit(f.body, m.busyText, w-70-sw), p.text2)
+		c.Text(f.body, x+28+sw+10, y+76, c.Fit(f.body, m.t(m.busyText), w-70-sw), p.text2)
 	case overlayMessage:
 		w := minF(600, g.W-40)
-		lines := c.Wrap(f.body, m.messageText, w-56)
+		lines := c.Wrap(f.body, m.t(m.messageText), w-56)
 		h := float32(64+len(lines)*21) + 56
 		x, y := card(w, h)
-		c.Text(f.h3, x+28, y+40, "Note", p.fg)
+		c.Text(f.h3, x+28, y+40, m.t("Note"), p.fg)
 		yy := y + 70
 		for _, l := range lines {
 			c.Text(f.body, x+28, yy, l, p.text2)
 			yy += 21
 		}
-		c.Text(f.small, x+28, y+h-22, "Any key closes", p.muted)
+		c.Text(f.small, x+28, y+h-22, m.t("Any key closes"), p.muted)
 	case overlayHelp:
 		m.pxHelp(c, p, f, g, card)
 	case overlayUpdate:
 		w := minF(540, g.W-40)
-		lines := c.Wrap(f.body, "Install downloads it for this system, checks it against the release checksums and replaces this binary. The new version starts next time.", w-56)
+		lines := c.Wrap(f.body, m.t("Install downloads it for this system, checks it against the release checksums and replaces this binary. The new version starts next time."), w-56)
 		h := float32(104+len(lines)*21) + 72
 		x, y := card(w, h)
-		c.Text(f.h3, x+28, y+40, "Update available", p.fg)
+		c.Text(f.h3, x+28, y+40, m.t("Update available"), p.fg)
 		vx := x + 28
-		vx += c.Text(f.rowB, vx, y+72, "ghostty-config "+m.updateLatest, p.fg)
-		c.Text(f.body, vx+10, y+72, "· you have "+m.opts.Version, p.muted)
+		vx += c.Text(f.rowB, vx, y+72, m.t("ghostty-config ")+m.updateLatest, p.fg)
+		c.Text(f.body, vx+10, y+72, m.t("· you have ")+m.opts.Version, p.muted)
 		yy := y + 104
 		for _, l := range lines {
 			c.Text(f.body, x+28, yy, l, p.text2)
@@ -1431,14 +1480,14 @@ func (m *Model) pxOverlay(c *pix.Canvas, p pxPal, f pxFonts, g pxGeo) {
 		}
 		by := y + h - 52
 		bx := x + 28
-		label := "Install"
+		label := m.t("Install")
 		iw := c.Width(f.rowB, label) + 14 + 11 + 28
 		c.Rect(bx, by, iw, 32, 8, p.accent)
 		lw := c.Text(f.rowB, bx+14, mid(by, 32, 14), label, p.onAccent)
 		pxReturn(c, bx+14+lw+8, mid(by, 32, 14)+1, p.onAccent)
 		m.pxRegion(c, bx, by, iw, 32, hitButton, 0, "update-install")
 		bx += iw + 10
-		later := "Next time"
+		later := m.t("Next time")
 		nw := c.Width(f.row, later) + c.Width(f.monoS, "Esc") + 44
 		c.Rect(bx, by, nw, 32, 8, p.keycap)
 		tw := c.Text(f.row, bx+14, mid(by, 32, 14), later, p.fg)
@@ -1452,8 +1501,9 @@ func (m *Model) pxHelp(c *pix.Canvas, p pxPal, f pxFonts, g pxGeo, card func(w, 
 	w := minF(980, g.W-32)
 	h := minF(g.H-32, 640)
 	x, y := card(w, h)
-	c.Text(f.h3, x+28, y+40, "Keys and commands", p.fg)
-	c.Text(f.small, x+w-28-c.Width(f.small, "Any key closes"), y+40, "Any key closes", p.muted)
+	c.Text(f.h3, x+28, y+40, m.t("Keys and commands"), p.fg)
+	close := m.t("Any key closes")
+	c.Text(f.small, x+w-28-c.Width(f.small, close), y+40, close, p.muted)
 	c.Clip(x, y, w, h-12)
 	defer c.Unclip()
 	colW := (w - 56 - 32) / 2
@@ -1466,24 +1516,25 @@ func (m *Model) pxHelp(c *pix.Canvas, p pxPal, f pxFonts, g pxGeo, card func(w, 
 	}
 	keyCol += 16
 	for _, grp := range helpKeyGroups() {
-		c.Text(f.h2, x+28, yy, grp.title, p.accent)
+		c.Text(f.h2, x+28, yy, m.t(grp.title), p.accent)
 		yy += 24
 		for i := 0; i+1 < len(grp.pairs); i += 2 {
 			kw := pxKeyLabel(c, f.monoS, 0, 0, grp.pairs[i], p.fg, false) + 14
 			c.Rect(x+28, yy-14, kw, 19, 5, p.keycap)
 			pxKeyLabel(c, f.monoS, x+35, yy, grp.pairs[i], p.fg, true)
-			c.Text(f.small, x+28+keyCol, yy, c.Fit(f.small, grp.pairs[i+1], colW-keyCol), p.text2)
+			c.Text(f.small, x+28+keyCol, yy, c.Fit(f.small, m.t(grp.pairs[i+1]), colW-keyCol), p.text2)
 			yy += 23
 		}
 		yy += 10
 	}
 	rx := x + 28 + colW + 32
 	yy = y + 76
-	c.Text(f.h2, rx, yy, "Commands", p.accent)
-	c.Text(f.small, rx+c.Width(f.h2, "Commands")+10, yy, "type one, then Enter; Tab completes", p.muted)
+	cmdTitle := m.t("Commands")
+	c.Text(f.h2, rx, yy, cmdTitle, p.accent)
+	c.Text(f.small, rx+c.Width(f.h2, cmdTitle)+10, yy, m.t("type one, then Enter; Tab completes"), p.muted)
 	yy += 26
 	for _, grp := range groups {
-		c.Text(f.rowB, rx, yy, grp, p.fg)
+		c.Text(f.rowB, rx, yy, m.t(grp), p.fg)
 		yy += 20
 		var names []string
 		for _, cmd := range m.commands() {
@@ -1511,7 +1562,7 @@ func (m *Model) pxWelcome(c *pix.Canvas, p pxPal, f pxFonts) {
 	big := c.Face(false, true, 34)
 	tw := c.Width(big, "ghostty-config")
 	c.Text(big, (W-tw)/2, y+34, "ghostty-config", p.fg)
-	sub := "Themes, fonts, the window and extensions for Ghostty"
+	sub := m.t("Themes, fonts, the window and extensions for Ghostty")
 	c.Text(f.body, (W-c.Width(f.body, sub))/2, y+64, sub, p.muted)
 	if m.cur != nil {
 		sw := float32(16*22 + 15*6)
@@ -1531,19 +1582,20 @@ func (m *Model) pxWelcome(c *pix.Canvas, p pxPal, f pxFonts) {
 		kw := pxKeyLabel(c, f.monoS, 0, 0, ft[0], p.fg, false) + 14
 		c.Rect(colX, yy-14, kw, 20, 5, p.keycap)
 		pxKeyLabel(c, f.monoS, colX+7, yy+1, ft[0], p.fg, true)
-		c.Text(f.rowB, colX+110, yy, ft[1], p.fg)
-		c.Text(f.small, colX+300, yy, c.Fit(f.small, ft[2], minF(760, W-40)-300), p.muted)
+		c.Text(f.rowB, colX+110, yy, m.t(ft[1]), p.fg)
+		c.Text(f.small, colX+300, yy, c.Fit(f.small, m.t(ft[2]), minF(760, W-40)-300), p.muted)
 		yy += 30
 	}
 	yy += 20
-	note := fmt.Sprintf("%d themes · config: %s", len(m.lib.Themes), shortenPath(m.tree.Primary.Path))
+	note := m.tf("%d themes · config: %s", len(m.lib.Themes), shortenPath(m.tree.Primary.Path))
 	c.Text(f.small, (W-c.Width(f.small, note))/2, yy, note, p.muted)
-	note = "Looking changes nothing: a theme is applied only when you press Enter on it"
+	note = m.t("Looking changes nothing: a theme is applied only when you press Enter on it")
 	c.Text(f.small, (W-c.Width(f.small, note))/2, yy+20, note, p.muted)
-	bw := c.Width(f.rowB, "Begin") + 14 + 11 + 28
+	begin := m.t("Begin")
+	bw := c.Width(f.rowB, begin) + 14 + 11 + 28
 	bx := (W - bw) / 2
 	c.Rect(bx, yy+44, bw, 34, 8, p.accent)
-	lw := c.Text(f.rowB, bx+14, mid(yy+44, 34, 14), "Begin", p.onAccent)
+	lw := c.Text(f.rowB, bx+14, mid(yy+44, 34, 14), begin, p.onAccent)
 	pxReturn(c, bx+14+lw+8, mid(yy+44, 34, 14)+1, p.onAccent)
 }
 
