@@ -125,6 +125,11 @@ type Model struct {
 	cellW, cellH float64
 	// px draws the picture interface; nil for the text one.
 	px *pixEngine
+	// imgReady is whether the alternate screen is up, so that pictures sent
+	// now land on the screen that shows them; imgSeq tells the newest wait
+	// from older ones.
+	imgReady bool
+	imgSeq   int
 	// applyLive tints the terminal once, in the theme Enter applied.
 	applyLive *ghostty.Live
 
@@ -297,10 +302,22 @@ type (
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
+		first := m.width == 0
 		m.width, m.height = msg.Width, msg.Height
 		m.top = 0
 		if m.opts.Images {
 			m.refreshCell()
+		}
+		if first {
+			return m, m.armImages()
+		}
+		return m, nil
+	case imgReadyMsg:
+		if msg.seq == m.imgSeq && m.imgs != nil {
+			// Whatever was sent before went to the other screen: send it all
+			// again, here.
+			m.imgs.reset()
+			m.imgReady = true
 		}
 		return m, nil
 	case tea.BackgroundColorMsg:
@@ -395,9 +412,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateOverlay(msg)
 		}
 		if m.peek {
-			// Any key brings the editor back.
+			// Any key brings the editor back, on a fresh alternate screen.
 			m.peek = false
-			return m, nil
+			return m, m.armImages()
 		}
 		if msg.String() == "f2" {
 			m.peek = true
@@ -418,8 +435,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *Model) View() tea.View {
 	content := m.render()
 	if m.imgs != nil {
-		// The pictures go out before the frame that shows them.
-		m.imgs.flush()
+		// The pictures go out before the frame that shows them, once the
+		// screen that shows them is up.
+		if m.imgReady {
+			m.imgs.flush()
+		} else {
+			m.imgs.queue.Reset()
+		}
 	}
 	v := tea.NewView(content)
 	v.AltScreen = !m.peek
@@ -440,6 +462,10 @@ func (m *Model) render() string {
 		return rebase(ui.fill(ui.base().Render(" ")+ui.keyHintFit(m.width-2, "any key", "brings ghostty-config back"), m.width), ui.base())
 	}
 	if m.pixelOn() {
+		if !m.imgReady {
+			// A moment of plain ground while the alternate screen comes up.
+			return m.fillScreen("")
+		}
 		return m.renderPixel()
 	}
 	body := m.viewMain()

@@ -71,6 +71,7 @@ func newHarnessWith(t *testing.T, config string, opts Options) *harness {
 	// theme being shown and paints no ground; the others have their own tests.
 	state.Interface = "clear"
 	writeDebounce = time.Millisecond
+	imgSettle = time.Millisecond
 	// Tests have no terminal to detect: draw in full colour, rounded.
 	t.Setenv("GHOSTTY_CONFIG_GLYPHS", "round")
 	m := New(paths, tree, lib, state, opts)

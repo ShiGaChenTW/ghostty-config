@@ -1,6 +1,9 @@
 package tui
 
 import (
+	"time"
+
+	tea "charm.land/bubbletea/v2"
 	"io"
 	"os"
 	"path/filepath"
@@ -220,4 +223,26 @@ func (s *imageStore) dump(id uint32, data []byte) {
 	}
 	_ = os.MkdirAll(s.dumpDir, 0o755)
 	_ = os.WriteFile(filepath.Join(s.dumpDir, strconv.Itoa(int(id))+".png"), data, 0o644)
+}
+
+// imgSettle is how long pictures wait for the alternate screen. Kitty and
+// Ghostty keep the pictures of the main and the alternate screen apart, and
+// the program enters the alternate screen with the first frame it writes, so
+// a picture sent with that frame would land on the main screen and never
+// show; the rows that do not change would never be sent again.
+var imgSettle = 120 * time.Millisecond
+
+// imgReadyMsg says the alternate screen has been up for imgSettle.
+type imgReadyMsg struct{ seq int }
+
+// armImages holds the pictures back until the alternate screen is up: at
+// the start, and after stepping aside to the terminal and back.
+func (m *Model) armImages() tea.Cmd {
+	if m.imgs == nil {
+		return nil
+	}
+	m.imgReady = false
+	m.imgSeq++
+	seq := m.imgSeq
+	return tea.Tick(imgSettle, func(time.Time) tea.Msg { return imgReadyMsg{seq} })
 }

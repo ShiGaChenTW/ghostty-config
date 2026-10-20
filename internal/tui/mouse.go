@@ -88,6 +88,7 @@ func (m *Model) updateMouse(raw tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if m.peek {
 		if msg.press {
 			m.peek = false
+			return m, m.armImages()
 		}
 		return m, nil
 	}

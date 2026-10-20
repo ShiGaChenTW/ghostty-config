@@ -78,11 +78,15 @@ say "Version $current → $next: everything committed as v$next, tagged $next."
 git show --stat --format= HEAD | tail -n 1
 
 if [ "$push" -eq 0 ]; then
-	say "Nothing is pushed yet. To publish, push the commit and the tag:"
-	say "  git push origin $branch $next"
+	say "Nothing is pushed yet. To publish, push the commit, then the tag:"
+	say "  git push origin $branch && git push origin $next"
 	exit 0
 fi
 
-git push --quiet origin "$branch" "$next"
+# The branch first, then the tag: pushed together, a tag can reach GitHub
+# before a workflow the same push adds, and then nothing builds the release.
+git push --quiet origin "$branch"
+sleep 5
+git push --quiet origin "$next"
 say "Pushed $branch and $next. GitHub Actions now builds the binaries and publishes the release:"
 say "  https://github.com/vitruves/ghostty-config/actions"

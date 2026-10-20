@@ -162,7 +162,7 @@ func (c *Canvas) Face(mono, bold bool, px float32) font.Face {
 
 // substitutes stand in for symbols no embedded font draws.
 var substitutes = map[rune]string{
-	'⌘': "Cmd ", '⌥': "Opt ", '⌃': "Ctrl ", '⇧': "Shift ", '⌫': "Bksp", '⏎': "Enter",
+	'⌘': "Cmd+", '⌥': "Opt+", '⌃': "Ctrl+", '⇧': "Shift+", '⌫': "Bksp", '⏎': "Enter",
 	'●': "•", '♥': "♥", '✎': "", '❯': "›", '▏': "|", '─': "-", '│': "|",
 	'░': " ", '█': " ", '▄': " ", '▀': " ", '╭': " ", '╮': " ", '╯': " ", '╰': " ", '✓': "ok", '✗': "x",
 }

@@ -467,9 +467,11 @@ func (m *Model) pxGallery(c *pix.Canvas, p pxPal, f pxFonts, g pxGeo) {
 		if s.kind == galTile && s.x == 0 && cur > 0 && m.results[cur-1].header {
 			lead = headH
 		}
-		switch {
-		case m.galAlign:
+		if m.galAlign || m.centre {
 			e.galTop = s.y - lead
+			if m.centre {
+				e.galTop = s.y - (viewH-s.height)/2
+			}
 			// Show the whole group from its title when the card fits under it.
 			for j := cur; j >= 0; j-- {
 				if m.results[j].header {
@@ -479,8 +481,6 @@ func (m *Model) pxGallery(c *pix.Canvas, p pxPal, f pxFonts, g pxGeo) {
 					break
 				}
 			}
-		case m.centre:
-			e.galTop = s.y - (viewH-s.height)/2
 		}
 		m.galAlign, m.centre = false, false
 		if s.y-lead < e.galTop {
@@ -496,12 +496,29 @@ func (m *Model) pxGallery(c *pix.Canvas, p pxPal, f pxFonts, g pxGeo) {
 	if e.galTop < 0 {
 		e.galTop = 0
 	}
+	// Never start the view inside a row: the first thing on screen is a
+	// title or a whole row of cards.
+	snap := total
+	for _, s := range spots {
+		if s.y >= e.galTop-0.5 && s.y < snap {
+			snap = s.y
+		}
+	}
+	if snap < total {
+		e.galTop = snap
+	}
 
 	c.Clip(0, g.bodyY-6, g.W, g.viewEnd-g.bodyY+6)
 	defer c.Unclip()
 	for i, s := range spots {
 		top := g.bodyY + s.y - e.galTop
-		if top+s.height < g.bodyY-6 || top > g.viewEnd {
+		// Only what fits whole is drawn: no half cards at the edges, and no
+		// title without the row under it.
+		need := s.height
+		if s.kind == galHead {
+			need += ph + 50
+		}
+		if top < g.bodyY-0.5 || top+need > g.viewEnd+0.5 {
 			continue
 		}
 		o := m.results[i]
@@ -679,13 +696,15 @@ func (m *Model) pxMenu(c *pix.Canvas, p pxPal, f pxFonts, g pxGeo) {
 		s := spots[i]
 		if s.head != "" {
 			hy := g.bodyY + s.headY - e.listTop
-			c.Text(f.h2, g.bodyX+14, mid(hy, headH, 15), s.head, p.fg)
+			if hy >= g.bodyY-0.5 && hy+headH+rowH <= g.viewEnd+0.5 {
+				c.Text(f.h2, g.bodyX+14, mid(hy, headH, 15), s.head, p.fg)
+			}
 		}
 		if o.header || s.h == 0 {
 			continue
 		}
 		y := g.bodyY + s.y - e.listTop
-		if y+rowH < g.bodyY || y > g.viewEnd {
+		if y < g.bodyY-0.5 || y+rowH > g.viewEnd+0.5 {
 			continue
 		}
 		m.pxMenuRow(c, p, f, o, i == m.sel.cursor, g.bodyX, y, listW)
@@ -734,6 +753,20 @@ func (m *Model) pxScrollList(spots []menuSpot, total float32, g pxGeo) {
 	}
 	if e.listTop < 0 {
 		e.listTop = 0
+	}
+	// Start the view on a line or a title, never inside one.
+	snap := total
+	for _, s := range spots {
+		top := s.y
+		if s.head != "" {
+			top = s.headY
+		}
+		if top >= e.listTop-0.5 && top < snap {
+			snap = top
+		}
+	}
+	if snap < total {
+		e.listTop = snap
 	}
 }
 
@@ -1031,7 +1064,7 @@ func (m *Model) pxOptions(c *pix.Canvas, p pxPal, f pxFonts, g pxGeo) {
 		c.Clip(g.bodyX-4, top, listW+8, g.viewEnd-top)
 		for i, o := range m.results {
 			sy := top + spots[i].y - e.listTop
-			if sy+spots[i].h < top || sy > g.viewEnd {
+			if sy < top-0.5 || sy+spots[i].h > g.viewEnd+0.5 {
 				continue
 			}
 			if o.header {
@@ -1133,7 +1166,7 @@ func (m *Model) pxEditor(c *pix.Canvas, p pxPal, f pxFonts, g pxGeo) {
 	c.Clip(g.bodyX-4, top, listW+8, g.viewEnd-top)
 	for i, k := range keys {
 		y := top + spots[i].y - m.px.listTop
-		if y+32 < top || y > g.viewEnd {
+		if y < top-0.5 || y+32 > g.viewEnd+0.5 {
 			continue
 		}
 		v := m.cur.Colors[k]
