@@ -6,13 +6,18 @@
 package pix
 
 import (
+	"fmt"
 	"image"
 	"image/color"
 	"image/draw"
 	"math"
+	"os"
 	"strings"
+	"sync"
 
 	"golang.org/x/image/font"
+	"golang.org/x/image/font/opentype"
+	"golang.org/x/image/font/sfnt"
 	"golang.org/x/image/math/fixed"
 	"golang.org/x/image/vector"
 
@@ -160,6 +165,65 @@ func (c *Canvas) Shadow(x, y, w, h, r, spread, dy float32, alpha float64) {
 // Face is a face of the embedded fonts at a logical size.
 func (c *Canvas) Face(mono, bold bool, px float32) font.Face {
 	return kimg.Face(mono, bold, float64(px*c.S*c.TextScale))
+}
+
+// Font is a font file of this machine, read to draw text in it.
+type Font struct {
+	f     *opentype.Font
+	mu    sync.Mutex
+	faces map[int]font.Face
+}
+
+// OpenFont reads a font file. In a collection the face named postScript is
+// the one taken, or else the one at index.
+func OpenFont(path, postScript string, index int) (*Font, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	coll, err := opentype.ParseCollection(data)
+	if err != nil {
+		return nil, err
+	}
+	n := coll.NumFonts()
+	if n == 0 {
+		return nil, fmt.Errorf("%s holds no font", path)
+	}
+	pick := -1
+	if postScript != "" && n > 1 {
+		var b sfnt.Buffer
+		for i := 0; i < n && pick < 0; i++ {
+			if f, err := coll.Font(i); err == nil {
+				if name, err := f.Name(&b, sfnt.NameIDPostScript); err == nil && name == postScript {
+					pick = i
+				}
+			}
+		}
+	}
+	if pick < 0 {
+		pick = min(max(index, 0), n-1)
+	}
+	f, err := coll.Font(pick)
+	if err != nil {
+		return nil, err
+	}
+	return &Font{f: f, faces: map[int]font.Face{}}, nil
+}
+
+// FaceIn is a face of a font file at a logical size.
+func (c *Canvas) FaceIn(f *Font, px float32) font.Face {
+	key := int(px*c.S*c.TextScale*10 + 0.5)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if face, ok := f.faces[key]; ok {
+		return face
+	}
+	face, err := opentype.NewFace(f.f, &opentype.FaceOptions{Size: float64(key) / 10, DPI: 72, Hinting: font.HintingNone})
+	if err != nil {
+		return c.Face(true, false, px)
+	}
+	f.faces[key] = face
+	return face
 }
 
 // substitutes stand in for symbols no embedded font draws.

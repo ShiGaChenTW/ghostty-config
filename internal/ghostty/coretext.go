@@ -10,7 +10,8 @@ import (
 // On macOS Ghostty resolves fonts through Core Text. Asking the same database
 // removes the guesswork: the style names come back spelled exactly as Ghostty
 // will match them against `font-style`, and the monospace trait is the real
-// one rather than a guess from the name.
+// one rather than a guess from the name. Each face's file comes along, so a
+// specimen can be drawn in it.
 const coreTextScript = `
 ObjC.import('AppKit');
 var fm = $.NSFontManager.sharedFontManager;
@@ -21,15 +22,18 @@ for (var i = 0; i < fams.count; i++) {
   if (fam.charAt(0) === '.') continue;
   var members = fm.availableMembersOfFontFamily($(fam));
   if (!members) continue;
-  var styles = [], mono = false;
+  var styles = [], files = [], mono = false;
   for (var j = 0; j < members.count; j++) {
     var m = members.objectAtIndex(j);
     var style = ObjC.unwrap(m.objectAtIndex(1));
     var traits = ObjC.unwrap(m.objectAtIndex(3));
     if ((traits & 1024) !== 0) mono = true;
     styles.push(style);
+    var font = $.NSFont.fontWithNameSize(m.objectAtIndex(0), 12);
+    var url = font.isNil() ? null : font.fontDescriptor.objectForKey($('NSCTFontFileURLAttribute'));
+    files.push((url && !url.isNil() ? ObjC.unwrap(url.path) : '') + '\x1f' + ObjC.unwrap(m.objectAtIndex(0)));
   }
-  out.push(fam + '\t' + (mono ? '1' : '0') + '\t' + styles.join('|'));
+  out.push(fam + '\t' + (mono ? '1' : '0') + '\t' + styles.join('|') + '\t' + files.join('\x1e'));
 }
 out.join('\n');
 `
@@ -50,12 +54,23 @@ func coreTextFamilies() (map[string]platformFamily, error) {
 			continue
 		}
 		var styles []string
-		for _, s := range strings.Split(parts[2], "|") {
-			if s = strings.TrimSpace(s); s != "" {
-				styles = append(styles, s)
+		files := map[string]FontFile{}
+		var paths []string
+		if len(parts) >= 4 {
+			paths = strings.Split(parts[3], "\x1e")
+		}
+		for i, s := range strings.Split(parts[2], "|") {
+			if s = strings.TrimSpace(s); s == "" {
+				continue
+			}
+			styles = append(styles, s)
+			if i < len(paths) {
+				if path, ps, _ := strings.Cut(paths[i], "\x1f"); path != "" {
+					files[s] = FontFile{Path: path, PostScript: ps}
+				}
 			}
 		}
-		out[parts[0]] = platformFamily{Styles: styles, Mono: parts[1] == "1"}
+		out[parts[0]] = platformFamily{Styles: styles, Mono: parts[1] == "1", Files: files}
 	}
 	if len(out) == 0 {
 		return nil, fmt.Errorf("Core Text reported no families")

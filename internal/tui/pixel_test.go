@@ -14,6 +14,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	uv "github.com/charmbracelet/ultraviolet"
 
+	"github.com/vitruves/ghostty-config/internal/ghostty"
 	"github.com/vitruves/ghostty-config/internal/pix"
 )
 
@@ -106,8 +107,32 @@ func TestPixelScreens(t *testing.T) {
 	h.m.jumpToGroup("Tool")
 	h.shot("07-tool")
 
+	// The specimen is set in the family's own file; the embedded faces stand
+	// in for one on disk.
+	dir := filepath.Join("..", "kimg", "fonts")
+	h.m.families[0].Files = map[string]ghostty.FontFile{
+		"Regular": {Path: filepath.Join(dir, "sans-regular.ttf")},
+		"Bold":    {Path: filepath.Join(dir, "sans-bold.ttf")},
+	}
 	h.m.setPromptText("Font ")
+	if load := h.m.wantSpecimen(); load == nil {
+		t.Fatal("the font list did not ask for the highlighted family's files")
+	} else {
+		h.send(load())
+	}
+	if h.m.specimenFont(h.m.families[0].Files["Regular"]) == nil {
+		t.Fatal("the highlighted family's file was not read")
+	}
 	h.shot("08-font-list")
+	before := h.config()
+	h.key("down")
+	if h.config() != before {
+		t.Fatalf("moving through the families wrote the configuration:\n%s", h.config())
+	}
+	h.key("enter")
+	if !strings.Contains(h.config(), "font-family = ") {
+		t.Fatalf("Enter on a family did not write it:\n%s", h.config())
+	}
 	h.m.setPromptText("Opacity ")
 	h.shot("09-opacity-values")
 

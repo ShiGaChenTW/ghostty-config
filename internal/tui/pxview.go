@@ -1087,9 +1087,11 @@ func (m *Model) pxOptions(c *pix.Canvas, p pxPal, f pxFonts, g pxGeo) {
 	}
 
 	if sideW > 0 {
-		if m.cmd.set != nil {
+		switch {
+		case m.cmd.set != nil:
 			m.pxCommandSide(c, p, f, m.cmd, m.selected(), sideX, g.bodyY, sideW, g.viewEnd-g.bodyY)
-		} else {
+		case m.cmd.group == "Fonts" && m.pxFontSide(c, p, f, m.selected(), sideX, g.bodyY, sideW, g.viewEnd-g.bodyY):
+		default:
 			m.pxDetail(c, p, sideX, g.bodyY, sideW, g.viewEnd-g.bodyY)
 		}
 	}

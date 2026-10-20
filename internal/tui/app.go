@@ -137,9 +137,11 @@ type Model struct {
 	families    []ghostty.Family
 	fontsLoaded bool
 	fontLoading bool
-	fontFamily  string
-	fontStyle   string
-	fontSize    float64
+	// specimens are the font files the picture interface has read, by file.
+	specimens  map[string]specimenFont
+	fontFamily string
+	fontStyle  string
+	fontSize   float64
 
 	// Mouse: what is clickable on the current frame, and the last click.
 	regions   []region
@@ -308,6 +310,14 @@ type (
 
 // Update dispatches to the overlay or the prompt.
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	model, cmd := m.update(msg)
+	if load := m.wantSpecimen(); load != nil {
+		cmd = tea.Batch(cmd, load)
+	}
+	return model, cmd
+}
+
+func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
@@ -376,6 +386,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.recompute()
 		m.landOnCurrentValue()
+		return m, nil
+	case specimenMsg:
+		for k, v := range msg.fonts {
+			if _, wanted := m.specimens[k]; wanted {
+				m.specimens[k] = v
+			}
+		}
 		return m, nil
 	case installDoneMsg:
 		return m, m.finishInstall(msg)

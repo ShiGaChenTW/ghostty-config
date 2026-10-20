@@ -291,6 +291,11 @@ func (m *Model) buildCommands() []*command {
 			if opt == nil || opt.family == nil {
 				return nil
 			}
+			if m.browsesFonts() {
+				// The panel sets the family in itself; writing it would
+				// reload Ghostty and resize every cell under the picture.
+				return nil
+			}
 			if m.fontFamily == "" && strings.TrimSpace(m.arg) == "" && !m.browsed {
 				// The list was only opened: with no family configured the
 				// highlight rests on the first one, which nobody chose.
@@ -331,7 +336,7 @@ func (m *Model) buildCommands() []*command {
 			return out
 		},
 		onMove: func(m *Model, opt *option) tea.Cmd {
-			if opt == nil {
+			if opt == nil || m.browsesFonts() {
 				return nil
 			}
 			m.setFontStyle(opt.value)

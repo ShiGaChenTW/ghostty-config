@@ -159,9 +159,12 @@ func previewFontPanel(m *Model, opt *option, width int) []string {
 		lines = append(lines, c.mutedS().Render(pad(row[0], 13))+c.base().Render(truncate(row[1], width-13)))
 	}
 	lines = append(lines, "")
-	if m.autoReloadWorks() {
+	switch {
+	case m.browsesFonts():
+		lines = append(lines, para(c.mutedS(), "Moving the highlight only looks; Enter writes it, then "+m.reloadWord()+".", width)...)
+	case m.autoReloadWorks():
 		lines = append(lines, para(c.mutedS(), "Moving the highlight writes it and reloads Ghostty: this whole screen is redrawn in the font as you go.", width)...)
-	} else {
+	default:
 		lines = append(lines, para(c.text(c.warn), "Moving the highlight writes it; "+m.reloadHint()+".", width)...)
 	}
 	return lines

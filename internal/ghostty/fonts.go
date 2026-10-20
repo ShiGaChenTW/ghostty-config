@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -19,6 +20,35 @@ type Family struct {
 	Mono   bool
 	// Faces are the full face names Ghostty reported, kept for the sample.
 	Faces []string
+	// Files are where each style lives on disk, by style name, so a specimen
+	// can be drawn in the family without asking Ghostty to load it.
+	Files map[string]FontFile
+}
+
+// FontFile is one face on disk. A collection holds several faces: the one
+// meant is the one named PostScript, or else the one at Index.
+type FontFile struct {
+	Path       string
+	PostScript string
+	Index      int
+}
+
+// File is the face of a style, falling back to the regular one and then to
+// any the family has.
+func (f Family) File(style string) (FontFile, bool) {
+	for _, s := range []string{style, "Regular", "Book", "Roman"} {
+		for name, file := range f.Files {
+			if strings.EqualFold(name, s) {
+				return file, true
+			}
+		}
+	}
+	for _, s := range f.Styles {
+		if file, ok := f.Files[s]; ok {
+			return file, true
+		}
+	}
+	return FontFile{}, false
 }
 
 // FontCatalog caches the scan: it costs a few hundred milliseconds and the
@@ -64,7 +94,7 @@ func (c *FontCatalog) Families() []Family {
 		for _, name := range ghosttyNames {
 			f := Family{Name: name, Faces: faces[name]}
 			if p, ok := platform[name]; ok {
-				f.Styles, f.Mono = p.Styles, p.Mono
+				f.Styles, f.Mono, f.Files = p.Styles, p.Mono, p.Files
 			} else {
 				f.Styles = stylesFromFaces(name, faces[name])
 				f.Mono = looksMonospaced(name)
@@ -73,7 +103,7 @@ func (c *FontCatalog) Families() []Family {
 		}
 	} else {
 		for name, p := range platform {
-			out = append(out, Family{Name: name, Styles: p.Styles, Mono: p.Mono})
+			out = append(out, Family{Name: name, Styles: p.Styles, Mono: p.Mono, Files: p.Files})
 		}
 	}
 	for i := range out {
@@ -184,6 +214,7 @@ func looksMonospaced(name string) bool {
 type platformFamily struct {
 	Styles []string
 	Mono   bool
+	Files  map[string]FontFile
 }
 
 // platformFamilies asks the platform font database for every family, its
@@ -202,7 +233,7 @@ func platformFamilies() map[string]platformFamily {
 
 // fontconfigFamilies reads fc-list. Spacing 100 is monospace, 90 dual width.
 func fontconfigFamilies() map[string]platformFamily {
-	cmd := exec.Command("fc-list", "--format", "%{family[0]}\t%{style[0]}\t%{spacing}\n")
+	cmd := exec.Command("fc-list", "--format", "%{family[0]}\t%{style[0]}\t%{spacing}\t%{file}\t%{index}\n")
 	cmd.Env = append(os.Environ(), "LC_ALL=en_US.UTF-8")
 	output, err := cmd.Output()
 	if err != nil {
@@ -221,6 +252,13 @@ func fontconfigFamilies() map[string]platformFamily {
 		}
 		if spacing == "100" || spacing == "90" {
 			f.Mono = true
+		}
+		if len(parts) >= 5 && style != "" && strings.TrimSpace(parts[3]) != "" {
+			if f.Files == nil {
+				f.Files = map[string]FontFile{}
+			}
+			index, _ := strconv.Atoi(strings.TrimSpace(parts[4]))
+			f.Files[style] = FontFile{Path: strings.TrimSpace(parts[3]), Index: index}
 		}
 		out[name] = f
 	}
